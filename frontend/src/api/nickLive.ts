@@ -152,12 +152,10 @@ export async function sendModeratorReply(
     guest_id: guestId,
     reply_text: replyText,
   };
-  console.log("[sendModeratorReply] payload →", payload);
   const res = await apiClient.post(
     `/nick-lives/${nickLiveId}/moderator/reply`,
     payload
   );
-  console.log("[sendModeratorReply] response →", res.data);
   return res.data;
 }
 

@@ -16,6 +16,7 @@ import {
   Popconfirm,
   message,
   Divider,
+  Switch,
 } from "antd";
 import {
   UserOutlined,
@@ -23,6 +24,7 @@ import {
   PlayCircleOutlined,
   StopOutlined,
   ReloadOutlined,
+  InfoCircleOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -45,6 +47,11 @@ import {
   sendModeratorReply,
   autoReplyComments,
 } from "../api/nickLive";
+import {
+  type NickLiveSettings,
+  getNickLiveSettings,
+  updateNickLiveSettings,
+} from "../api/settings";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -89,6 +96,8 @@ function LiveScan() {
   const [replyText, setReplyText] = useState("");
   const [replyLoading, setReplyLoading] = useState(false);
   const [replyResults, setReplyResults] = useState<ModeratorReplyResult[]>([]);
+  const [nickSettings, setNickSettings] = useState<NickLiveSettings | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
 
   const commentsEndRef = useRef<HTMLDivElement>(null);
 
@@ -246,13 +255,42 @@ function LiveScan() {
     }
   }, [selectedId]);
 
+  const loadNickSettings = useCallback(async () => {
+    if (!selectedId) return;
+    try {
+      const s = await getNickLiveSettings(selectedId);
+      setNickSettings(s);
+    } catch {
+      setNickSettings(null);
+    }
+  }, [selectedId]);
+
   useEffect(() => {
     if (selectedId) {
       loadModStatus();
+      loadNickSettings();
     } else {
       setModStatus(null);
+      setNickSettings(null);
     }
-  }, [selectedId, loadModStatus]);
+  }, [selectedId, loadModStatus, loadNickSettings]);
+
+  const handleToggleSetting = useCallback(
+    async (field: "ai_reply_enabled" | "auto_reply_enabled" | "auto_post_enabled", value: boolean) => {
+      if (!selectedId) return;
+      setSettingsLoading(true);
+      try {
+        const updated = await updateNickLiveSettings(selectedId, { [field]: value });
+        setNickSettings(updated);
+        message.success(value ? "Đã bật" : "Đã tắt");
+      } catch {
+        message.error("Cập nhật thất bại");
+      } finally {
+        setSettingsLoading(false);
+      }
+    },
+    [selectedId]
+  );
 
   const handleSaveCurl = useCallback(async () => {
     if (!selectedId || !curlInput.trim()) {
@@ -637,6 +675,57 @@ function LiveScan() {
                   {modStatus?.configured ? "Cap nhat cURL" : "Luu cURL"}
                 </Button>
               </Card>
+
+              {/* Automation Settings Card */}
+              {modStatus?.configured && (
+                <Card title="Cài đặt tự động" style={{ marginBottom: 16 }}>
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    <Space>
+                      <Switch
+                        checked={nickSettings?.ai_reply_enabled ?? false}
+                        onChange={(v) => handleToggleSetting("ai_reply_enabled", v)}
+                        loading={settingsLoading}
+                        disabled={!isScanning}
+                      />
+                      <span>Bật AI Reply</span>
+                      {!isScanning && (
+                        <Tag icon={<InfoCircleOutlined />} color="warning">
+                          Cần đang quét
+                        </Tag>
+                      )}
+                    </Space>
+                    <Space>
+                      <Switch
+                        checked={nickSettings?.auto_reply_enabled ?? false}
+                        onChange={(v) => handleToggleSetting("auto_reply_enabled", v)}
+                        loading={settingsLoading}
+                        disabled={!isScanning}
+                      />
+                      <span>Bật Auto-reply (tự động reply comment mới)</span>
+                    </Space>
+                    <Space>
+                      <Switch
+                        checked={nickSettings?.auto_post_enabled ?? false}
+                        onChange={(v) => handleToggleSetting("auto_post_enabled", v)}
+                        loading={settingsLoading}
+                        disabled={!isScanning}
+                      />
+                      <span>Bật Auto-post (đăng comment theo lịch)</span>
+                    </Space>
+
+                    {nickSettings?.auto_reply_enabled && (
+                      <Tag color={nickSettings.ai_reply_enabled ? "purple" : "blue"}>
+                        {nickSettings.ai_reply_enabled
+                          ? "Đang reply bằng AI"
+                          : "Đang reply bằng template ngẫu nhiên"}
+                      </Tag>
+                    )}
+                    {nickSettings?.auto_post_enabled && (
+                      <Tag color="green">Đang đăng comment theo lịch</Tag>
+                    )}
+                  </Space>
+                </Card>
+              )}
 
               {/* Reply Controls - only when scanning AND moderator configured */}
               {isScanning && modStatus?.configured && (
