@@ -9,19 +9,11 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# Only these headers from the user-supplied cURL are forwarded to Shopee.
-_ALLOWED_HEADERS = frozenset(
-    {
-        "cookie",
-        "content-type",
-        "x-livestreaming-moderator",
-        "x-csrftoken",
-        "authorization",
-    }
-)
-
 # The only host we will send requests to.
 _REQUIRED_HOST = "live.shopee.vn"
+
+# Headers managed by httpx — must not be forwarded from cURL.
+_SKIP_HEADERS = frozenset({"host", "content-length", "transfer-encoding"})
 
 
 def parse_curl_command(curl_text: str) -> tuple[str | None, dict[str, str], str]:
@@ -43,9 +35,12 @@ def parse_curl_command(curl_text: str) -> tuple[str | None, dict[str, str], str]
 
     body = "{}"
     for pattern in [
-        r"""--data-raw\s+['"](.*?)['"]""",
-        r"""--data\s+['"](.*?)['"]""",
-        r"""-d\s+['"](.*?)['"]""",
+        r"""--data-raw\s+'(.*?)'""",
+        r"""--data-raw\s+"(.*?)" """,
+        r"""--data\s+'(.*?)'""",
+        r"""--data\s+"(.*?)" """,
+        r"""-d\s+'(.*?)'""",
+        r"""-d\s+"(.*?)" """,
     ]:
         body_match = re.search(pattern, curl_text, re.DOTALL)
         if body_match:
@@ -80,9 +75,9 @@ class ShopeeLiveModerator:
             if parsed.hostname != _REQUIRED_HOST:
                 return {"error": f"cURL URL must target {_REQUIRED_HOST}"}
 
-        # Only keep headers from the allowlist — prevents header injection.
+        # Forward all headers except ones httpx manages internally.
         safe_headers = {
-            k: v for k, v in headers.items() if k.lower() in _ALLOWED_HEADERS
+            k: v for k, v in headers.items() if k.lower() not in _SKIP_HEADERS
         }
 
         try:
@@ -129,11 +124,9 @@ class ShopeeLiveModerator:
             guest_name.upper()[:8] + str(int(time.time())),
         )[-10:]
 
-        mention_text = f"@{guest_name} {reply_text}"
-
         inner_content = {
-            "content": mention_text,
-            "content_v2": f"#{placeholder}# {mention_text}",
+            "content": f"@{guest_name} {reply_text}",
+            "content_v2": f"#{placeholder}# {reply_text}",
             "extra_info": {
                 "feedback_transparent": "",
                 "place_holders": [
@@ -174,6 +167,14 @@ class ShopeeLiveModerator:
 
         url = f"https://{_REQUIRED_HOST}/api/v1/session/{live_session_id}/message"
 
+        # Debug: log request details
+        masked_headers = {
+            k: (v[:20] + "...") if k.lower() in ("cookie", "authorization") else v
+            for k, v in config["headers"].items()
+        }
+        logger.warning(f"[reply] URL: {url}")
+        logger.warning(f"[reply] Body: {json.dumps(body, ensure_ascii=False)}")
+
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
@@ -183,6 +184,7 @@ class ShopeeLiveModerator:
                     timeout=10.0,
                 )
                 is_success = False
+                resp_data: dict = {}
                 if resp.status_code == 200:
                     try:
                         resp_data = resp.json()
@@ -192,7 +194,9 @@ class ShopeeLiveModerator:
                 if not is_success:
                     logger.warning(
                         f"Reply failed for {guest_name} (id={guest_id}): "
-                        f"status={resp.status_code}"
+                        f"status={resp.status_code} | "
+                        f"response_headers={dict(resp.headers)} | "
+                        f"response_body={resp.text[:500]}"
                     )
                 # Return only success status — never leak raw upstream response.
                 return {

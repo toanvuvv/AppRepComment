@@ -147,14 +147,17 @@ export async function sendModeratorReply(
   guestId: number,
   replyText: string
 ): Promise<ModeratorReplyResult> {
+  const payload = {
+    guest_name: guestName,
+    guest_id: guestId,
+    reply_text: replyText,
+  };
+  console.log("[sendModeratorReply] payload →", payload);
   const res = await apiClient.post(
     `/nick-lives/${nickLiveId}/moderator/reply`,
-    {
-      guest_name: guestName,
-      guest_id: guestId,
-      reply_text: replyText,
-    }
+    payload
   );
+  console.log("[sendModeratorReply] response →", res.data);
   return res.data;
 }
 
