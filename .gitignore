@@ -71,4 +71,7 @@ logs/
 
 # Misc
 *.sqlite
+*.db
 *.db-journal
+backend/database.db
+.gitnexus

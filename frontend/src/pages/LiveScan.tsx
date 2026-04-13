@@ -91,7 +91,6 @@ function LiveScan() {
   const [replyResults, setReplyResults] = useState<ModeratorReplyResult[]>([]);
 
   const commentsEndRef = useRef<HTMLDivElement>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
 
   const loadNickLives = useCallback(async () => {
     try {
@@ -110,49 +109,25 @@ function LiveScan() {
     commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [comments]);
 
-  // SSE connection for live comments
-  useEffect(() => {
-    if (!isScanning || !selectedId) return;
-
-    const url = `/api/nick-lives/${selectedId}/comments/stream`;
-    const es = new EventSource(url);
-    eventSourceRef.current = es;
-
-    es.addEventListener("comment", (event) => {
-      try {
-        const data = JSON.parse(event.data) as CommentItem;
-        setComments((prev) => [...prev, data]);
-        setCommentCount((prev) => prev + 1);
-      } catch {
-        // ignore parse errors
-      }
-    });
-
-    es.onerror = () => {
-      // SSE reconnects automatically; no action needed
-    };
-
-    return () => {
-      es.close();
-      eventSourceRef.current = null;
-    };
-  }, [isScanning, selectedId]);
-
-  // Poll scan status while scanning
+  // Poll scan status + comments while scanning
   useEffect(() => {
     if (!isScanning || !selectedId) return;
 
     const interval = setInterval(async () => {
       try {
-        const status = await getScanStatus(selectedId);
+        const [status, latestComments] = await Promise.all([
+          getScanStatus(selectedId),
+          getComments(selectedId),
+        ]);
         if (!status.is_scanning) {
           setIsScanning(false);
         }
         setCommentCount(status.comment_count);
+        setComments(latestComments);
       } catch {
         // ignore polling errors
       }
-    }, 5000);
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [isScanning, selectedId]);
@@ -223,13 +198,26 @@ function LiveScan() {
     setScanLoading(true);
     try {
       await startScan(selectedId, activeSession.sessionId);
-      const existing = await getComments(selectedId);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      if (detail !== "Already scanning") {
+        message.error("Khong the bat dau quet");
+        setScanLoading(false);
+        return;
+      }
+      // Already scanning on server — sync UI state below
+    }
+    try {
+      const [existing, status] = await Promise.all([
+        getComments(selectedId),
+        getScanStatus(selectedId),
+      ]);
       setComments(existing);
+      setCommentCount(status.comment_count);
       setIsScanning(true);
-      setCommentCount(existing.length);
       message.success("Bat dau quet comment");
     } catch {
-      message.error("Khong the bat dau quet");
+      message.error("Khong the lay trang thai quet");
     } finally {
       setScanLoading(false);
     }

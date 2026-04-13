@@ -21,22 +21,27 @@ from app.schemas.nick_live import (
     ModeratorSaveCurlRequest,
     ModeratorStatus,
 )
+from app.dependencies import require_api_key
 from app.services.comment_scanner import scanner
 from app.services.live_moderator import moderator
 from app.services.shopee_api import get_live_sessions
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/nick-lives", tags=["nick-lives"])
+router = APIRouter(
+    prefix="/api/nick-lives",
+    tags=["nick-lives"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 @router.post("", response_model=NickLiveResponse)
 def create_nick_live(payload: NickLiveCreate, db: Session = Depends(get_db)) -> NickLive:
     user_data = payload.user
     nick = NickLive(
-        name=user_data.get("name", "Unknown"),
-        user_id=user_data.get("id", 0),
-        shop_id=user_data.get("shop_id"),
-        avatar=user_data.get("avatar"),
+        name=user_data.name,
+        user_id=user_data.id,
+        shop_id=user_data.shop_id,
+        avatar=user_data.avatar,
         cookies=payload.cookies,
     )
     db.add(nick)

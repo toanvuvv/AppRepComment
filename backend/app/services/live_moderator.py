@@ -3,10 +3,25 @@ import logging
 import re
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Only these headers from the user-supplied cURL are forwarded to Shopee.
+_ALLOWED_HEADERS = frozenset(
+    {
+        "cookie",
+        "content-type",
+        "x-livestreaming-moderator",
+        "x-csrftoken",
+        "authorization",
+    }
+)
+
+# The only host we will send requests to.
+_REQUIRED_HOST = "live.shopee.vn"
 
 
 def parse_curl_command(curl_text: str) -> tuple[str | None, dict[str, str], str]:
@@ -58,20 +73,32 @@ class ShopeeLiveModerator:
         """
         _session_id, headers, body = parse_curl_command(curl_text)
 
+        # Validate that the cURL targets the expected host.
+        url_match = re.search(r"['\"]?(https?://[^\s'\"]+)['\"]?", curl_text)
+        if url_match:
+            parsed = urlparse(url_match.group(1))
+            if parsed.hostname != _REQUIRED_HOST:
+                return {"error": f"cURL URL must target {_REQUIRED_HOST}"}
+
+        # Only keep headers from the allowlist — prevents header injection.
+        safe_headers = {
+            k: v for k, v in headers.items() if k.lower() in _ALLOWED_HEADERS
+        }
+
         try:
             body_data = json.loads(body)
         except json.JSONDecodeError:
             body_data = {}
 
         self._configs[nick_live_id] = {
-            "headers": headers,
-            "host_id": headers.get("X-Livestreaming-Moderator"),
+            "headers": safe_headers,
+            "host_id": safe_headers.get("X-Livestreaming-Moderator"),
             "usersig": body_data.get("usersig", ""),
             "uuid": body_data.get("uuid", ""),
         }
         return {
             "nick_live_id": nick_live_id,
-            "host_id": headers.get("X-Livestreaming-Moderator"),
+            "host_id": safe_headers.get("X-Livestreaming-Moderator"),
             "status": "saved",
         }
 
@@ -145,7 +172,7 @@ class ShopeeLiveModerator:
         if not body:
             return {"success": False, "error": "Failed to generate reply body"}
 
-        url = f"https://live.shopee.vn/api/v1/session/{live_session_id}/message"
+        url = f"https://{_REQUIRED_HOST}/api/v1/session/{live_session_id}/message"
 
         try:
             async with httpx.AsyncClient() as client:
@@ -165,18 +192,18 @@ class ShopeeLiveModerator:
                 if not is_success:
                     logger.warning(
                         f"Reply failed for {guest_name} (id={guest_id}): "
-                        f"status={resp.status_code} body={resp.text[:500]}"
+                        f"status={resp.status_code}"
                     )
+                # Return only success status — never leak raw upstream response.
                 return {
                     "success": is_success,
                     "status_code": resp.status_code,
-                    "response": resp.text,
                     "guest": guest_name,
                     "reply": reply_text,
                 }
         except Exception as e:
             logger.error(f"Send reply error: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": "Reply request failed"}
 
     async def auto_reply_comments(
         self,

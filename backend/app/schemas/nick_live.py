@@ -1,13 +1,20 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class UserPayload(BaseModel):
+    id: int
+    name: str = Field(max_length=100)
+    shop_id: int | None = None
+    avatar: str | None = Field(default=None, max_length=500)
 
 
 class NickLiveCreate(BaseModel):
     """User pastes JSON with user object + cookies string"""
 
-    user: dict  # contains id, name, shop_id, avatar etc.
-    cookies: str
+    user: UserPayload
+    cookies: str = Field(min_length=1, max_length=20000)
 
 
 class NickLiveResponse(BaseModel):
@@ -65,24 +72,28 @@ class ScanStatus(BaseModel):
 
 class ModeratorSaveCurlRequest(BaseModel):
     """Save moderator cURL template for a nick_live."""
-    curl_text: str
+
+    curl_text: str = Field(min_length=10, max_length=50000)
 
 
 class ModeratorReplyRequest(BaseModel):
     """Send a reply to a specific guest."""
-    guest_name: str
+
+    guest_name: str = Field(min_length=1, max_length=200)
     guest_id: int
-    reply_text: str
+    reply_text: str = Field(min_length=1, max_length=2000)
 
 
 class ModeratorAutoReplyRequest(BaseModel):
     """Auto-reply to multiple comments."""
+
     comments: list[dict]
-    reply_text: str
+    reply_text: str = Field(min_length=1, max_length=2000)
 
 
 class ModeratorStatus(BaseModel):
     """Whether moderator is configured for a nick_live."""
+
     nick_live_id: int
     configured: bool
     host_id: str | None = None
