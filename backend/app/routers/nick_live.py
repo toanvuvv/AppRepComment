@@ -22,8 +22,10 @@ from app.schemas.nick_live import (
     ModeratorStatus,
 )
 from app.dependencies import require_api_key
+from app.schemas.settings import NickLiveSettingsResponse, NickLiveSettingsUpdate
 from app.services.comment_scanner import scanner
 from app.services.live_moderator import moderator
+from app.services.settings_service import SettingsService
 from app.services.shopee_api import get_live_sessions
 
 logger = logging.getLogger(__name__)
@@ -228,3 +230,28 @@ async def auto_reply_comments(
     return await moderator.auto_reply_comments(
         nick_live_id, live_session_id, payload.comments, payload.reply_text
     )
+
+
+# --- Nick live settings (per-nick AI toggles) ---
+
+
+@router.get("/{nick_live_id}/settings", response_model=NickLiveSettingsResponse)
+def get_nick_settings(nick_live_id: int, db: Session = Depends(get_db)):
+    svc = SettingsService(db)
+    row = svc.get_or_create_nick_settings(nick_live_id)
+    return row
+
+
+@router.put("/{nick_live_id}/settings", response_model=NickLiveSettingsResponse)
+def update_nick_settings(
+    nick_live_id: int, payload: NickLiveSettingsUpdate, db: Session = Depends(get_db)
+):
+    svc = SettingsService(db)
+    row = svc.update_nick_settings(
+        nick_live_id,
+        ai_reply_enabled=payload.ai_reply_enabled,
+        auto_reply_enabled=payload.auto_reply_enabled,
+        auto_post_enabled=payload.auto_post_enabled,
+        knowledge_reply_enabled=payload.knowledge_reply_enabled,
+    )
+    return row

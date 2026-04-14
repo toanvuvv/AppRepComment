@@ -11,7 +11,7 @@ import {
   Typography,
   message,
 } from "antd";
-import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
+import { DeleteOutlined, PlusOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import {
   type AutoPostTemplate,
   type ReplyTemplate,
@@ -23,10 +23,17 @@ import {
   getOpenAIConfig,
   getReplyTemplates,
   getSystemPrompt,
+  testAI,
   updateAutoPostTemplate,
   updateOpenAIConfig,
   updateSystemPrompt,
 } from "../api/settings";
+import {
+  getBannedWords,
+  getKnowledgeAIConfig,
+  updateBannedWords,
+  updateKnowledgeAIConfig,
+} from "../api/knowledge";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -43,6 +50,8 @@ function Settings() {
   const [model, setModel] = useState("gpt-4o");
   const [apiKeySet, setApiKeySet] = useState(false);
   const [openaiLoading, setOpenaiLoading] = useState(false);
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
 
   // System prompt
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -60,19 +69,33 @@ function Settings() {
   const [newPostMax, setNewPostMax] = useState(300);
   const [postLoading, setPostLoading] = useState(false);
 
+  // Knowledge AI config
+  const [knowledgePrompt, setKnowledgePrompt] = useState("");
+  const [knowledgeModel, setKnowledgeModel] = useState("gpt-4o");
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+
+  // Banned words
+  const [bannedWordsText, setBannedWordsText] = useState("");
+  const [bannedWordsLoading, setBannedWordsLoading] = useState(false);
+
   const loadAll = useCallback(async () => {
     try {
-      const [oai, prompt, replies, posts] = await Promise.all([
+      const [oai, prompt, replies, posts, banned, kbConfig] = await Promise.all([
         getOpenAIConfig(),
         getSystemPrompt(),
         getReplyTemplates(),
         getAutoPostTemplates(),
+        getBannedWords(),
+        getKnowledgeAIConfig(),
       ]);
       setApiKeySet(oai.api_key_set);
       setModel(oai.model || "gpt-4o");
       setSystemPrompt(prompt.prompt);
       setReplyTemplates(replies);
       setAutoPostTemplates(posts);
+      setBannedWordsText(banned.words.join("\n"));
+      setKnowledgePrompt(kbConfig.system_prompt);
+      setKnowledgeModel(kbConfig.model || "gpt-4o");
     } catch {
       message.error("Không thể tải cài đặt");
     }
@@ -97,6 +120,22 @@ function Settings() {
       message.error("Lưu thất bại");
     } finally {
       setOpenaiLoading(false);
+    }
+  };
+
+  const handleTestAI = async () => {
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const result = await testAI();
+      setTestResult(`[${result.model}] ${result.reply}`);
+      message.success("AI hoạt động!");
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setTestResult(null);
+      message.error(detail || "Test AI thất bại");
+    } finally {
+      setTestLoading(false);
     }
   };
 
@@ -179,6 +218,37 @@ function Settings() {
     }
   };
 
+  const handleSaveKnowledgeConfig = async () => {
+    setKnowledgeLoading(true);
+    try {
+      await updateKnowledgeAIConfig({
+        system_prompt: knowledgePrompt,
+        model: knowledgeModel,
+      });
+      message.success("Đã lưu cấu hình Knowledge AI");
+    } catch {
+      message.error("Lưu thất bại");
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  };
+
+  const handleSaveBannedWords = async () => {
+    setBannedWordsLoading(true);
+    try {
+      const words = bannedWordsText
+        .split("\n")
+        .map((w) => w.trim())
+        .filter((w) => w.length > 0);
+      await updateBannedWords(words);
+      message.success("Đã lưu từ cấm");
+    } catch {
+      message.error("Lưu thất bại");
+    } finally {
+      setBannedWordsLoading(false);
+    }
+  };
+
   return (
     <div>
       <Title level={3}>Cài đặt</Title>
@@ -202,9 +272,25 @@ function Settings() {
             options={OPENAI_MODELS}
             onChange={setModel}
           />
-          <Button type="primary" onClick={handleSaveOpenAI} loading={openaiLoading}>
-            Lưu cấu hình OpenAI
-          </Button>
+          <Space>
+            <Button type="primary" onClick={handleSaveOpenAI} loading={openaiLoading}>
+              Lưu cấu hình OpenAI
+            </Button>
+            <Button
+              icon={<ThunderboltOutlined />}
+              onClick={handleTestAI}
+              loading={testLoading}
+              disabled={!apiKeySet}
+            >
+              Test AI
+            </Button>
+          </Space>
+          {testResult && (
+            <Card size="small" style={{ marginTop: 8, background: "#f6ffed" }}>
+              <Text strong>AI reply: </Text>
+              <Text>{testResult}</Text>
+            </Card>
+          )}
         </Space>
       </Card>
 
@@ -227,6 +313,38 @@ function Settings() {
         >
           Lưu System Prompt
         </Button>
+      </Card>
+
+      {/* Knowledge AI Config */}
+      <Card title="Cấu hình Knowledge AI (AI + dữ liệu sản phẩm)" style={{ marginBottom: 16 }}>
+        <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+          Cấu hình riêng cho chế độ Knowledge Reply. AI sẽ dùng prompt này kết hợp với
+          thông tin sản phẩm để trả lời comment trong Shopee Live.
+        </Text>
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <TextArea
+            rows={5}
+            placeholder="Ví dụ: Bạn là nhân viên tư vấn trên Shopee Live. Trả lời ngắn gọn, thân thiện, có emoji phù hợp. Dựa vào thông tin sản phẩm để tư vấn chính xác."
+            value={knowledgePrompt}
+            onChange={(e) => setKnowledgePrompt(e.target.value)}
+          />
+          <Space>
+            <Text>Model:</Text>
+            <Select
+              style={{ width: 200 }}
+              value={knowledgeModel}
+              options={OPENAI_MODELS}
+              onChange={setKnowledgeModel}
+            />
+          </Space>
+          <Button
+            type="primary"
+            onClick={handleSaveKnowledgeConfig}
+            loading={knowledgeLoading}
+          >
+            Lưu cấu hình Knowledge AI
+          </Button>
+        </Space>
       </Card>
 
       {/* Reply Templates */}
@@ -356,6 +474,27 @@ function Settings() {
             </List.Item>
           )}
         />
+      </Card>
+
+      {/* Banned Words */}
+      <Card title="Từ cấm (Banned Words)" style={{ marginBottom: 16 }}>
+        <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+          Các từ này sẽ bị thay thế bằng *** trong reply AI. Mỗi từ 1 dòng.
+        </Text>
+        <TextArea
+          rows={4}
+          placeholder={"Nhập từ cấm, mỗi từ 1 dòng\nVí dụ:\ngiá rẻ nhất\ncam kết chính hãng"}
+          value={bannedWordsText}
+          onChange={(e) => setBannedWordsText(e.target.value)}
+        />
+        <Button
+          type="primary"
+          onClick={handleSaveBannedWords}
+          loading={bannedWordsLoading}
+          style={{ marginTop: 8 }}
+        >
+          Lưu từ cấm
+        </Button>
       </Card>
     </div>
   );

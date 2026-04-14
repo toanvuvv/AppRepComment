@@ -7,6 +7,9 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.database import SessionLocal
+from app.models.settings import NickLiveSetting
+
 logger = logging.getLogger(__name__)
 
 # The only host we will send requests to.
@@ -53,12 +56,45 @@ def parse_curl_command(curl_text: str) -> tuple[str | None, dict[str, str], str]
 class ShopeeLiveModerator:
     """Manages moderator configs per nick_live and sends replies to live comments.
 
-    The cURL is stored as a template keyed by nick_live_id.
-    At send time, the actual live session_id is injected into the URL.
+    Configs are persisted to database (NickLiveSetting.moderator_config)
+    and cached in-memory for fast access at runtime.
     """
 
     def __init__(self) -> None:
         self._configs: dict[int, dict[str, Any]] = {}
+
+    def load_all_from_db(self) -> None:
+        """Load all saved moderator configs from database into memory cache."""
+        db = SessionLocal()
+        try:
+            rows = db.query(NickLiveSetting).filter(
+                NickLiveSetting.moderator_config.isnot(None)
+            ).all()
+            for row in rows:
+                try:
+                    config = json.loads(row.moderator_config)
+                    self._configs[row.nick_live_id] = config
+                    logger.info(f"Loaded moderator config for nick_live_id={row.nick_live_id}")
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"Invalid moderator config for nick_live_id={row.nick_live_id}")
+            logger.info(f"Loaded {len(self._configs)} moderator config(s) from database")
+        finally:
+            db.close()
+
+    def _persist_to_db(self, nick_live_id: int, config: dict[str, Any] | None) -> None:
+        """Save or clear moderator config in database."""
+        db = SessionLocal()
+        try:
+            row = db.query(NickLiveSetting).filter(
+                NickLiveSetting.nick_live_id == nick_live_id
+            ).first()
+            if not row:
+                row = NickLiveSetting(nick_live_id=nick_live_id)
+                db.add(row)
+            row.moderator_config = json.dumps(config, ensure_ascii=False) if config else None
+            db.commit()
+        finally:
+            db.close()
 
     def save_curl(self, nick_live_id: int, curl_text: str) -> dict[str, Any]:
         """Parse cURL and save as template for this nick_live.
@@ -85,12 +121,17 @@ class ShopeeLiveModerator:
         except json.JSONDecodeError:
             body_data = {}
 
-        self._configs[nick_live_id] = {
+        config = {
             "headers": safe_headers,
             "host_id": safe_headers.get("X-Livestreaming-Moderator"),
             "usersig": body_data.get("usersig", ""),
             "uuid": body_data.get("uuid", ""),
         }
+
+        # Save to memory cache and database
+        self._configs[nick_live_id] = config
+        self._persist_to_db(nick_live_id, config)
+
         return {
             "nick_live_id": nick_live_id,
             "host_id": safe_headers.get("X-Livestreaming-Moderator"),
@@ -104,7 +145,10 @@ class ShopeeLiveModerator:
         return nick_live_id in self._configs
 
     def remove_config(self, nick_live_id: int) -> bool:
-        return self._configs.pop(nick_live_id, None) is not None
+        removed = self._configs.pop(nick_live_id, None) is not None
+        if removed:
+            self._persist_to_db(nick_live_id, None)
+        return removed
 
     def generate_reply_body(
         self,
@@ -168,10 +212,6 @@ class ShopeeLiveModerator:
         url = f"https://{_REQUIRED_HOST}/api/v1/session/{live_session_id}/message"
 
         # Debug: log request details
-        masked_headers = {
-            k: (v[:20] + "...") if k.lower() in ("cookie", "authorization") else v
-            for k, v in config["headers"].items()
-        }
         logger.warning(f"[reply] URL: {url}")
         logger.warning(f"[reply] Body: {json.dumps(body, ensure_ascii=False)}")
 

@@ -5,12 +5,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db
+from app.routers.knowledge import router as knowledge_router
 from app.routers.nick_live import router as nick_live_router
+from app.routers.settings import router as settings_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Load persisted moderator configs into memory cache
+    from app.services.live_moderator import moderator
+    moderator.load_all_from_db()
     yield
 
 
@@ -33,6 +38,8 @@ app.add_middleware(
 )
 
 app.include_router(nick_live_router)
+app.include_router(settings_router)
+app.include_router(knowledge_router)
 
 
 @app.get("/api/health")

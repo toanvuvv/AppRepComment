@@ -52,6 +52,7 @@ import {
   getNickLiveSettings,
   updateNickLiveSettings,
 } from "../api/settings";
+import KnowledgeProductsCard from "../components/KnowledgeProductsCard";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -100,6 +101,9 @@ function LiveScan() {
   const [settingsLoading, setSettingsLoading] = useState(false);
 
   const commentsEndRef = useRef<HTMLDivElement>(null);
+  const prevCommentCountRef = useRef(0);
+  const commentContainerRef = useRef<HTMLDivElement>(null);
+  const userScrolledUpRef = useRef(false);
 
   const loadNickLives = useCallback(async () => {
     try {
@@ -114,9 +118,13 @@ function LiveScan() {
     loadNickLives();
   }, [loadNickLives]);
 
+  // Only auto-scroll when NEW comments arrive and user hasn't scrolled up
   useEffect(() => {
-    commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [comments]);
+    if (comments.length > prevCommentCountRef.current && !userScrolledUpRef.current) {
+      commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    prevCommentCountRef.current = comments.length;
+  }, [comments.length]);
 
   // Poll scan status + comments while scanning
   useEffect(() => {
@@ -124,15 +132,16 @@ function LiveScan() {
 
     const interval = setInterval(async () => {
       try {
-        const [status, latestComments] = await Promise.all([
-          getScanStatus(selectedId),
-          getComments(selectedId),
-        ]);
+        const status = await getScanStatus(selectedId);
         if (!status.is_scanning) {
           setIsScanning(false);
         }
         setCommentCount(status.comment_count);
-        setComments(latestComments);
+        // Only fetch full comments if count changed
+        if (status.comment_count !== prevCommentCountRef.current) {
+          const latestComments = await getComments(selectedId);
+          setComments(latestComments);
+        }
       } catch {
         // ignore polling errors
       }
@@ -276,7 +285,7 @@ function LiveScan() {
   }, [selectedId, loadModStatus, loadNickSettings]);
 
   const handleToggleSetting = useCallback(
-    async (field: "ai_reply_enabled" | "auto_reply_enabled" | "auto_post_enabled", value: boolean) => {
+    async (field: "ai_reply_enabled" | "auto_reply_enabled" | "auto_post_enabled" | "knowledge_reply_enabled", value: boolean) => {
       if (!selectedId) return;
       setSettingsLoading(true);
       try {
@@ -587,10 +596,18 @@ function LiveScan() {
           }
         >
           <div
+            ref={commentContainerRef}
+            onScroll={() => {
+              const el = commentContainerRef.current;
+              if (!el) return;
+              // User scrolled up if not near bottom (within 100px)
+              userScrolledUpRef.current = el.scrollHeight - el.scrollTop - el.clientHeight > 100;
+            }}
             style={{
               maxHeight: 500,
               overflowY: "auto",
               padding: "8px 0",
+              contain: "layout style",
             }}
           >
             {comments.length === 0 ? (
@@ -696,6 +713,21 @@ function LiveScan() {
                     </Space>
                     <Space>
                       <Switch
+                        checked={nickSettings?.knowledge_reply_enabled ?? false}
+                        onChange={(v) => handleToggleSetting("knowledge_reply_enabled", v)}
+                        loading={settingsLoading}
+                        disabled={!isScanning}
+                      />
+                      <span>Bật Knowledge Reply (AI + dữ liệu sản phẩm)</span>
+                      {!isScanning && (
+                        <Tag icon={<InfoCircleOutlined />} color="warning">
+                          Cần đang quét
+                        </Tag>
+                      )}
+                    </Space>
+                    <Divider style={{ margin: "8px 0" }} />
+                    <Space>
+                      <Switch
                         checked={nickSettings?.auto_reply_enabled ?? false}
                         onChange={(v) => handleToggleSetting("auto_reply_enabled", v)}
                         loading={settingsLoading}
@@ -713,18 +745,25 @@ function LiveScan() {
                       <span>Bật Auto-post (đăng comment theo lịch)</span>
                     </Space>
 
-                    {nickSettings?.auto_reply_enabled && (
-                      <Tag color={nickSettings.ai_reply_enabled ? "purple" : "blue"}>
-                        {nickSettings.ai_reply_enabled
-                          ? "Đang reply bằng AI"
-                          : "Đang reply bằng template ngẫu nhiên"}
-                      </Tag>
+                    {nickSettings?.knowledge_reply_enabled && (
+                      <Tag color="gold">Đang reply bằng Knowledge AI (sản phẩm)</Tag>
+                    )}
+                    {nickSettings?.ai_reply_enabled && !nickSettings?.knowledge_reply_enabled && (
+                      <Tag color="purple">Đang reply bằng AI</Tag>
+                    )}
+                    {nickSettings?.auto_reply_enabled && !nickSettings?.ai_reply_enabled && !nickSettings?.knowledge_reply_enabled && (
+                      <Tag color="blue">Đang reply bằng template ngẫu nhiên</Tag>
                     )}
                     {nickSettings?.auto_post_enabled && (
                       <Tag color="green">Đang đăng comment theo lịch</Tag>
                     )}
                   </Space>
                 </Card>
+              )}
+
+              {/* Knowledge Products Card */}
+              {modStatus?.configured && (
+                <KnowledgeProductsCard nickLiveId={selectedId} />
               )}
 
               {/* Reply Controls - only when scanning AND moderator configured */}

@@ -1,4 +1,5 @@
 # backend/app/services/settings_service.py
+import json
 import logging
 from typing import Any
 
@@ -127,14 +128,50 @@ class SettingsService:
         ai_reply_enabled: bool | None = None,
         auto_reply_enabled: bool | None = None,
         auto_post_enabled: bool | None = None,
+        knowledge_reply_enabled: bool | None = None,
     ) -> NickLiveSetting:
         row = self.get_or_create_nick_settings(nick_live_id)
-        if ai_reply_enabled is not None:
-            row.ai_reply_enabled = ai_reply_enabled
+
+        # Mutual exclusion: only one of ai_reply / knowledge_reply can be active
+        if knowledge_reply_enabled is True:
+            row.knowledge_reply_enabled = True
+            row.ai_reply_enabled = False
+        elif ai_reply_enabled is True:
+            row.ai_reply_enabled = True
+            row.knowledge_reply_enabled = False
+        else:
+            if ai_reply_enabled is not None:
+                row.ai_reply_enabled = ai_reply_enabled
+            if knowledge_reply_enabled is not None:
+                row.knowledge_reply_enabled = knowledge_reply_enabled
+
         if auto_reply_enabled is not None:
             row.auto_reply_enabled = auto_reply_enabled
         if auto_post_enabled is not None:
             row.auto_post_enabled = auto_post_enabled
+
         self._db.commit()
         self._db.refresh(row)
         return row
+
+    # --- Knowledge AI config ---
+
+    def get_knowledge_system_prompt(self) -> str:
+        return self.get_setting("knowledge_system_prompt") or ""
+
+    def get_knowledge_model(self) -> str | None:
+        return self.get_setting("knowledge_model")
+
+    # --- Banned words ---
+
+    def get_banned_words(self) -> list[str]:
+        raw = self.get_setting("banned_words")
+        if not raw:
+            return []
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def set_banned_words(self, words: list[str]) -> None:
+        self.set_setting("banned_words", json.dumps(words, ensure_ascii=False))

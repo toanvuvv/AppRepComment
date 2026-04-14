@@ -1,5 +1,5 @@
 import { Layout, Menu } from "antd";
-import { HomeOutlined, CommentOutlined } from "@ant-design/icons";
+import { HomeOutlined, CommentOutlined, SettingOutlined } from "@ant-design/icons";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 
 const { Header, Content, Footer } = Layout;
@@ -18,6 +18,11 @@ function AppLayout() {
       key: "/live-scan",
       icon: <CommentOutlined />,
       label: "Quet Comment",
+    },
+    {
+      key: "/settings",
+      icon: <SettingOutlined />,
+      label: "Cai dat AI",
     },
   ];
 

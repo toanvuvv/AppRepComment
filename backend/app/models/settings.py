@@ -49,3 +49,5 @@ class NickLiveSetting(Base):
     ai_reply_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auto_reply_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auto_post_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    knowledge_reply_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    moderator_config: Mapped[str | None] = mapped_column(Text, nullable=True)

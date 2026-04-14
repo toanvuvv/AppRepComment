@@ -8,6 +8,10 @@ from app.schemas.settings import (
     AutoPostTemplateCreate,
     AutoPostTemplateResponse,
     AutoPostTemplateUpdate,
+    BannedWordsResponse,
+    BannedWordsUpdate,
+    KnowledgeAIConfigResponse,
+    KnowledgeAIConfigUpdate,
     OpenAIConfigResponse,
     OpenAIConfigUpdate,
     ReplyTemplateCreate,
@@ -15,6 +19,7 @@ from app.schemas.settings import (
     SystemPromptResponse,
     SystemPromptUpdate,
 )
+from app.services.ai_reply_service import generate_reply
 from app.services.settings_service import SettingsService
 
 router = APIRouter(
@@ -117,3 +122,66 @@ def delete_auto_post_template(template_id: int, db: Session = Depends(get_db)) -
     if not SettingsService(db).delete_auto_post_template(template_id):
         raise HTTPException(status_code=404, detail="Template not found")
     return {"detail": "Deleted"}
+
+
+# --- Test AI ---
+
+@router.post("/test-ai")
+async def test_ai(db: Session = Depends(get_db)) -> dict:
+    """Test OpenAI connection with current config."""
+    svc = SettingsService(db)
+    api_key = svc.get_openai_api_key()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="OpenAI API Key chưa được cấu hình")
+    model = svc.get_setting("openai_model") or "gpt-4o"
+    system_prompt = svc.get_system_prompt() or "Bạn là nhân viên CSKH."
+    reply = await generate_reply(
+        api_key=api_key,
+        model=model,
+        system_prompt=system_prompt,
+        comment_text="Sản phẩm này có ship COD không ạ?",
+        guest_name="Khách test",
+    )
+    if reply is None:
+        raise HTTPException(status_code=502, detail="OpenAI không phản hồi. Kiểm tra lại API key và model.")
+    return {"reply": reply, "model": model}
+
+
+# --- Knowledge AI config ---
+
+
+@router.get("/knowledge-ai", response_model=KnowledgeAIConfigResponse)
+def get_knowledge_ai_config(db: Session = Depends(get_db)):
+    svc = SettingsService(db)
+    return KnowledgeAIConfigResponse(
+        system_prompt=svc.get_knowledge_system_prompt(),
+        model=svc.get_knowledge_model() or "gpt-4o",
+    )
+
+
+@router.put("/knowledge-ai")
+def update_knowledge_ai_config(
+    payload: KnowledgeAIConfigUpdate, db: Session = Depends(get_db)
+):
+    svc = SettingsService(db)
+    if payload.system_prompt is not None:
+        svc.set_setting("knowledge_system_prompt", payload.system_prompt)
+    if payload.model is not None:
+        svc.set_setting("knowledge_model", payload.model)
+    return {"status": "saved"}
+
+
+# --- Banned words ---
+
+
+@router.get("/banned-words", response_model=BannedWordsResponse)
+def get_banned_words(db: Session = Depends(get_db)):
+    svc = SettingsService(db)
+    return BannedWordsResponse(words=svc.get_banned_words())
+
+
+@router.put("/banned-words")
+def update_banned_words(payload: BannedWordsUpdate, db: Session = Depends(get_db)):
+    svc = SettingsService(db)
+    svc.set_banned_words(payload.words)
+    return {"status": "saved"}

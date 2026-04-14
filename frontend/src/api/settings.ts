@@ -27,6 +27,7 @@ export interface NickLiveSettings {
   ai_reply_enabled: boolean;
   auto_reply_enabled: boolean;
   auto_post_enabled: boolean;
+  knowledge_reply_enabled: boolean;
 }
 
 // --- OpenAI ---
@@ -99,6 +100,13 @@ export async function deleteAutoPostTemplate(id: number): Promise<void> {
   await apiClient.delete(`/settings/auto-post-templates/${id}`);
 }
 
+// --- Test AI ---
+
+export async function testAI(): Promise<{ reply: string; model: string }> {
+  const res = await apiClient.post("/settings/test-ai");
+  return res.data;
+}
+
 // --- Nick live settings ---
 
 export async function getNickLiveSettings(nickLiveId: number): Promise<NickLiveSettings> {
@@ -108,7 +116,7 @@ export async function getNickLiveSettings(nickLiveId: number): Promise<NickLiveS
 
 export async function updateNickLiveSettings(
   nickLiveId: number,
-  data: Partial<{ ai_reply_enabled: boolean; auto_reply_enabled: boolean; auto_post_enabled: boolean }>
+  data: Partial<{ ai_reply_enabled: boolean; auto_reply_enabled: boolean; auto_post_enabled: boolean; knowledge_reply_enabled: boolean }>
 ): Promise<NickLiveSettings> {
   const res = await apiClient.put(`/nick-lives/${nickLiveId}/settings`, data);
   return res.data;
