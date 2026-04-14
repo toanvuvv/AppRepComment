@@ -110,12 +110,27 @@ function LiveScan() {
     loadNickLives();
   }, [loadNickLives]);
 
-  // Auto-detect scanning state on nick selection
+  // Auto-check sessions + detect scanning state on nick selection
   useEffect(() => {
     if (!selectedId) return;
     let cancelled = false;
 
-    async function checkScanState() {
+    async function autoCheck() {
+      // Check sessions
+      setSessionsLoading(true);
+      try {
+        const data = await getSessions(selectedId!);
+        if (!cancelled) {
+          setSessions(data.sessions);
+          setActiveSession(data.active_session);
+        }
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) setSessionsLoading(false);
+      }
+
+      // Check scan state
       try {
         const status = await getScanStatus(selectedId!);
         if (!cancelled && status.is_scanning) {
@@ -126,7 +141,7 @@ function LiveScan() {
       }
     }
 
-    checkScanState();
+    autoCheck();
     return () => { cancelled = true; };
   }, [selectedId]);
 
