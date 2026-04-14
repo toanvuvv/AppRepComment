@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { memo, useState } from "react";
 import {
   Button,
   Card,
   Input,
-  message,
   Popconfirm,
   Space,
   Table,
@@ -16,12 +15,8 @@ import {
   DatabaseOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
-import {
-  deleteKnowledgeProducts,
-  getKnowledgeProducts,
-  importKnowledgeProducts,
-  KnowledgeProduct,
-} from "../api/knowledge";
+import { KnowledgeProduct } from "../api/knowledge";
+import { useKnowledgeProducts } from "../hooks/useKnowledgeProducts";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -30,58 +25,15 @@ interface Props {
   nickLiveId: number | null;
 }
 
-export default function KnowledgeProductsCard({ nickLiveId }: Props) {
-  const [products, setProducts] = useState<KnowledgeProduct[]>([]);
+function KnowledgeProductsCardInner({ nickLiveId }: Props) {
   const [rawJson, setRawJson] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [importLoading, setImportLoading] = useState(false);
 
-  const loadProducts = useCallback(async () => {
-    if (!nickLiveId) return;
-    setLoading(true);
-    try {
-      const data = await getKnowledgeProducts(nickLiveId);
-      setProducts(data);
-    } catch {
-      // silent
-    } finally {
-      setLoading(false);
-    }
-  }, [nickLiveId]);
+  const { products, loading, importLoading, handleImport, handleDeleteAll } =
+    useKnowledgeProducts(nickLiveId);
 
-  useEffect(() => {
-    loadProducts();
-  }, [loadProducts]);
-
-  const handleImport = async () => {
-    if (!nickLiveId || !rawJson.trim()) {
-      message.warning("Paste JSON data trước");
-      return;
-    }
-    setImportLoading(true);
-    try {
-      const data = await importKnowledgeProducts(nickLiveId, rawJson);
-      setProducts(data);
-      setRawJson("");
-      message.success(`Import thành công ${data.length} sản phẩm`);
-    } catch (err: unknown) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Import thất bại";
-      message.error(errorMsg);
-    } finally {
-      setImportLoading(false);
-    }
-  };
-
-  const handleDeleteAll = async () => {
-    if (!nickLiveId) return;
-    try {
-      await deleteKnowledgeProducts(nickLiveId);
-      setProducts([]);
-      message.success("Đã xóa tất cả sản phẩm");
-    } catch {
-      message.error("Xóa thất bại");
-    }
+  const onImport = async () => {
+    const success = await handleImport(rawJson);
+    if (success) setRawJson("");
   };
 
   const parseKeywords = (raw: string): string[] => {
@@ -233,7 +185,7 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
           <Button
             type="primary"
             icon={<ImportOutlined />}
-            onClick={handleImport}
+            onClick={onImport}
             loading={importLoading}
             disabled={!rawJson.trim()}
             style={{ marginTop: 8 }}
@@ -257,3 +209,6 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
     </Card>
   );
 }
+
+const KnowledgeProductsCard = memo(KnowledgeProductsCardInner);
+export default KnowledgeProductsCard;
