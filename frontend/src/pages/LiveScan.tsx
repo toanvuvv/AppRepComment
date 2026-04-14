@@ -8,7 +8,6 @@ import {
   Col,
   Table,
   Alert,
-  Spin,
   Badge,
   Tag,
   Space,
@@ -22,7 +21,6 @@ import {
   UserOutlined,
   DeleteOutlined,
   PlayCircleOutlined,
-  StopOutlined,
   ReloadOutlined,
   InfoCircleOutlined,
 } from "@ant-design/icons";
@@ -40,7 +38,6 @@ import {
   startScan,
   stopScan,
   getScanStatus,
-  getComments,
   saveModeratorCurl,
   getModeratorStatus,
   removeModerator,
@@ -53,15 +50,10 @@ import {
   updateNickLiveSettings,
 } from "../api/settings";
 import KnowledgeProductsCard from "../components/KnowledgeProductsCard";
+import CommentFeed from "../components/CommentFeed";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
-
-function formatTs(ts?: number): string {
-  if (!ts) return "";
-  const ms = ts > 1e12 ? ts : ts * 1000;
-  return new Date(ms).toLocaleTimeString("vi-VN");
-}
 
 function formatDateTime(ts?: number): string {
   if (!ts) return "";
@@ -86,8 +78,6 @@ function LiveScan() {
   const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [activeSession, setActiveSession] = useState<LiveSession | null>(null);
   const [isScanning, setIsScanning] = useState(false);
-  const [commentCount, setCommentCount] = useState(0);
-  const [comments, setComments] = useState<CommentItem[]>([]);
   const [scanLoading, setScanLoading] = useState(false);
 
   // Moderator state
@@ -100,11 +90,12 @@ function LiveScan() {
   const [nickSettings, setNickSettings] = useState<NickLiveSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
 
-  const commentsEndRef = useRef<HTMLDivElement>(null);
-  const prevCommentCountRef = useRef(0);
-  const prevPolledCountRef = useRef(0);
-  const commentContainerRef = useRef<HTMLDivElement>(null);
-  const userScrolledUpRef = useRef(false);
+  // Ref for comments from CommentFeed (no re-renders)
+  const commentsRef = useRef<CommentItem[]>([]);
+
+  const handleCommentsChange = useCallback((comments: CommentItem[]) => {
+    commentsRef.current = comments;
+  }, []);
 
   const loadNickLives = useCallback(async () => {
     try {
@@ -119,38 +110,25 @@ function LiveScan() {
     loadNickLives();
   }, [loadNickLives]);
 
-  // Only auto-scroll when NEW comments arrive and user hasn't scrolled up
+  // Auto-detect scanning state on nick selection
   useEffect(() => {
-    if (comments.length > prevCommentCountRef.current && !userScrolledUpRef.current) {
-      commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-    prevCommentCountRef.current = comments.length;
-  }, [comments.length]);
+    if (!selectedId) return;
+    let cancelled = false;
 
-  // Poll scan status + comments while scanning
-  useEffect(() => {
-    if (!isScanning || !selectedId) return;
-
-    const interval = setInterval(async () => {
+    async function checkScanState() {
       try {
-        const status = await getScanStatus(selectedId);
-        if (!status.is_scanning) {
-          setIsScanning(false);
-        }
-        setCommentCount(status.comment_count);
-        // Only fetch full comments if count changed
-        if (status.comment_count !== prevPolledCountRef.current) {
-          prevPolledCountRef.current = status.comment_count;
-          const latestComments = await getComments(selectedId);
-          setComments(latestComments);
+        const status = await getScanStatus(selectedId!);
+        if (!cancelled && status.is_scanning) {
+          setIsScanning(true);
         }
       } catch {
-        // ignore polling errors
+        // Not scanning or error — ignore
       }
-    }, 3000);
+    }
 
-    return () => clearInterval(interval);
-  }, [isScanning, selectedId]);
+    checkScanState();
+    return () => { cancelled = true; };
+  }, [selectedId]);
 
   const handleAdd = useCallback(async () => {
     if (!jsonInput.trim()) {
@@ -189,7 +167,6 @@ function LiveScan() {
           setSessions([]);
           setActiveSession(null);
           setIsScanning(false);
-          setComments([]);
         }
         await loadNickLives();
       } catch {
@@ -225,22 +202,10 @@ function LiveScan() {
         setScanLoading(false);
         return;
       }
-      // Already scanning on server — sync UI state below
     }
-    try {
-      const [existing, status] = await Promise.all([
-        getComments(selectedId),
-        getScanStatus(selectedId),
-      ]);
-      setComments(existing);
-      setCommentCount(status.comment_count);
-      setIsScanning(true);
-      message.success("Bắt đầu quét comment");
-    } catch {
-      message.error("Không thể lấy trạng thái quét");
-    } finally {
-      setScanLoading(false);
-    }
+    setIsScanning(true);
+    message.success("Bắt đầu quét comment");
+    setScanLoading(false);
   }, [selectedId, activeSession]);
 
   const handleStopScan = useCallback(async () => {
@@ -360,13 +325,14 @@ function LiveScan() {
   );
 
   const handleAutoReply = useCallback(async () => {
-    if (!selectedId || !replyText.trim() || comments.length === 0) {
+    const currentComments = commentsRef.current;
+    if (!selectedId || !replyText.trim() || currentComments.length === 0) {
       message.error("Cần nội dung reply và comments");
       return;
     }
     setReplyLoading(true);
     try {
-      const results = await autoReplyComments(selectedId, comments, replyText);
+      const results = await autoReplyComments(selectedId, currentComments, replyText);
       const successCount = results.filter((r) => r.success).length;
       message.success(`Đã reply ${successCount}/${results.length} comment`);
       setReplyResults(results);
@@ -375,7 +341,7 @@ function LiveScan() {
     } finally {
       setReplyLoading(false);
     }
-  }, [selectedId, replyText, comments]);
+  }, [selectedId, replyText]);
 
   const sessionColumns: ColumnsType<LiveSession> = [
     { title: "Session ID", dataIndex: "sessionId", key: "sessionId", width: 100 },
@@ -438,7 +404,6 @@ function LiveScan() {
                     setSessions([]);
                     setActiveSession(null);
                     setIsScanning(false);
-                    setComments([]);
                     setModStatus(null);
                     setReplyResults([]);
                   }}
@@ -572,77 +537,14 @@ function LiveScan() {
         </Card>
       )}
 
-      {/* Section 4: Comment Feed */}
-      {isScanning && selectedId && (
-        <Card
-          title={
-            <Space>
-              <Spin size="small" />
-              <span>Đang quét...</span>
-              <Badge
-                count={commentCount}
-                overflowCount={99999}
-                style={{ backgroundColor: "#52c41a" }}
-              />
-            </Space>
-          }
-          extra={
-            <Button
-              type="primary"
-              danger
-              icon={<StopOutlined />}
-              onClick={handleStopScan}
-            >
-              Dừng quét
-            </Button>
-          }
-        >
-          <div
-            ref={commentContainerRef}
-            onScroll={() => {
-              const el = commentContainerRef.current;
-              if (!el) return;
-              // User scrolled up if not near bottom (within 100px)
-              userScrolledUpRef.current = el.scrollHeight - el.scrollTop - el.clientHeight > 100;
-            }}
-            style={{
-              maxHeight: 500,
-              overflowY: "auto",
-              padding: "8px 0",
-              contain: "layout style",
-            }}
-          >
-            {comments.length === 0 ? (
-              <Text type="secondary">Chưa có comment nào...</Text>
-            ) : (
-              comments.map((c, idx) => (
-                <div
-                  key={c.id || idx}
-                  style={{
-                    padding: "6px 12px",
-                    borderBottom: "1px solid #f0f0f0",
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "flex-start",
-                  }}
-                >
-                  <Text
-                    type="secondary"
-                    style={{ fontSize: 12, flexShrink: 0 }}
-                  >
-                    {formatTs(c.timestamp || c.create_time || c.ctime)}
-                  </Text>
-                  <Text strong style={{ flexShrink: 0, color: "#1677ff" }}>
-                    {getDisplayName(c)}:
-                  </Text>
-                  <Text>{getCommentText(c)}</Text>
-                </div>
-              ))
-            )}
-            <div ref={commentsEndRef} />
-          </div>
-        </Card>
-      )}
+      {/* Section 4: Comment Feed (SSE-powered) */}
+      <CommentFeed
+        nickLiveId={selectedId}
+        isScanning={isScanning}
+        onStopScan={handleStopScan}
+        onCommentsChange={handleCommentsChange}
+      />
+
       {/* Section 5: Moderator - only when nick selected */}
       {selectedId && (
         <>
@@ -782,17 +684,17 @@ function LiveScan() {
                       type="primary"
                       onClick={handleAutoReply}
                       loading={replyLoading}
-                      disabled={!replyText.trim() || comments.length === 0}
+                      disabled={!replyText.trim()}
                     >
-                      Auto Reply tất cả ({comments.length} comment)
+                      Auto Reply tất cả
                     </Button>
                   </Space>
 
                   {/* Reply per comment */}
-                  {comments.length > 0 && replyText.trim() && (
+                  {replyText.trim() && commentsRef.current.length > 0 && (
                     <div style={{ marginTop: 16, maxHeight: 300, overflowY: "auto" }}>
                       <Text strong>Reply từng comment:</Text>
-                      {comments.slice(-20).map((c, idx) => (
+                      {commentsRef.current.slice(-20).map((c, idx) => (
                         <div
                           key={c.id || idx}
                           style={{
