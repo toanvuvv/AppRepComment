@@ -5,6 +5,15 @@ from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
+# Cache OpenAI client by api_key to reuse connection pool
+_clients: dict[str, AsyncOpenAI] = {}
+
+
+def _get_client(api_key: str) -> AsyncOpenAI:
+    if api_key not in _clients:
+        _clients[api_key] = AsyncOpenAI(api_key=api_key)
+    return _clients[api_key]
+
 
 async def generate_reply(
     api_key: str,
@@ -18,7 +27,7 @@ async def generate_reply(
     Returns the reply text (to be appended after @guest_name), or None on error.
     """
     try:
-        client = AsyncOpenAI(api_key=api_key)
+        client = _get_client(api_key)
         response = await client.chat.completions.create(
             model=model,
             messages=[

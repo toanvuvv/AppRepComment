@@ -55,7 +55,7 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
 
   const handleImport = async () => {
     if (!nickLiveId || !rawJson.trim()) {
-      message.warning("Paste JSON data truoc");
+      message.warning("Paste JSON data trước");
       return;
     }
     setImportLoading(true);
@@ -63,10 +63,10 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
       const data = await importKnowledgeProducts(nickLiveId, rawJson);
       setProducts(data);
       setRawJson("");
-      message.success(`Import thanh cong ${data.length} san pham`);
+      message.success(`Import thành công ${data.length} sản phẩm`);
     } catch (err: unknown) {
       const errorMsg =
-        err instanceof Error ? err.message : "Import that bai";
+        err instanceof Error ? err.message : "Import thất bại";
       message.error(errorMsg);
     } finally {
       setImportLoading(false);
@@ -78,9 +78,9 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
     try {
       await deleteKnowledgeProducts(nickLiveId);
       setProducts([]);
-      message.success("Da xoa tat ca san pham");
+      message.success("Đã xóa tất cả sản phẩm");
     } catch {
-      message.error("Xoa that bai");
+      message.error("Xóa thất bại");
     }
   };
 
@@ -116,7 +116,7 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
       sorter: (a, b) => a.product_order - b.product_order,
     },
     {
-      title: "Ten san pham",
+      title: "Tên sản phẩm",
       dataIndex: "name",
       ellipsis: true,
       width: 250,
@@ -133,7 +133,7 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
         )),
     },
     {
-      title: "Gia",
+      title: "Giá",
       width: 150,
       render: (_: unknown, r: KnowledgeProduct) => {
         const price =
@@ -153,7 +153,7 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
       },
     },
     {
-      title: "Khuyen mai",
+      title: "Khuyến mãi",
       width: 120,
       render: (_: unknown, r: KnowledgeProduct) => {
         const vouchers = parseJson(r.voucher_info);
@@ -166,17 +166,17 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
       },
     },
     {
-      title: "Ton kho",
+      title: "Tồn kho",
       dataIndex: "stock_qty",
       width: 80,
       render: (val: number | null, r: KnowledgeProduct) => (
         <Tag color={r.in_stock ? "green" : "red"}>
-          {r.in_stock ? val ?? "Co" : "Het"}
+          {r.in_stock ? val ?? "Có" : "Hết"}
         </Tag>
       ),
     },
     {
-      title: "Da ban",
+      title: "Đã bán",
       dataIndex: "sold",
       width: 80,
       render: (val: number | null) => (val ? `${val}+` : "-"),
@@ -198,20 +198,20 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
         <Space>
           <DatabaseOutlined />
           <span>Knowledge Products</span>
-          <Tag color="blue">{products.length} san pham</Tag>
+          <Tag color="blue">{products.length} sản phẩm</Tag>
         </Space>
       }
       style={{ marginBottom: 16 }}
       extra={
         products.length > 0 ? (
           <Popconfirm
-            title="Xoa tat ca san pham?"
+            title="Xóa tất cả sản phẩm?"
             onConfirm={handleDeleteAll}
-            okText="Xoa"
-            cancelText="Huy"
+            okText="Xóa"
+            cancelText="Hủy"
           >
             <Button danger icon={<DeleteOutlined />} size="small">
-              Xoa tat ca
+              Xóa tất cả
             </Button>
           </Popconfirm>
         ) : null
@@ -220,8 +220,8 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
       <Space direction="vertical" style={{ width: "100%" }} size="middle">
         <div>
           <Text type="secondary">
-            Paste JSON response tu Shopee (data gio hang live) de import san
-            pham:
+            Paste JSON response từ Shopee (data giỏ hàng live) để import sản
+            phẩm:
           </Text>
           <TextArea
             rows={4}
@@ -238,7 +238,7 @@ export default function KnowledgeProductsCard({ nickLiveId }: Props) {
             disabled={!rawJson.trim()}
             style={{ marginTop: 8 }}
           >
-            Import san pham
+            Import sản phẩm
           </Button>
         </div>
 

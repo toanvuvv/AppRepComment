@@ -116,7 +116,6 @@ class CommentScanner:
         self, nick_live_id: int, session_id: int, comments: list
     ) -> None:
         """Check if AI reply is enabled and auto-reply to new comments."""
-        from app.services.ai_reply_service import generate_reply
         from app.services.live_moderator import moderator
         from app.services.settings_service import SettingsService
 
@@ -191,7 +190,7 @@ class CommentScanner:
         self, nick_live_id, session_id, comments, svc, moderator, db
     ) -> None:
         """Knowledge-based AI reply flow with product context."""
-        import json as _json
+        import json
 
         from app.services.knowledge_product_service import KnowledgeProductService
         from app.services.knowledge_reply_service import (
@@ -223,8 +222,8 @@ class CommentScanner:
         keyword_index: dict[int, list[str]] = {}
         for p in products:
             try:
-                keyword_index[p.product_order] = _json.loads(p.keywords)
-            except (_json.JSONDecodeError, TypeError):
+                keyword_index[p.product_order] = json.loads(p.keywords)
+            except (json.JSONDecodeError, TypeError):
                 keyword_index[p.product_order] = []
 
         for c in comments:

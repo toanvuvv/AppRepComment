@@ -1,5 +1,5 @@
 // frontend/src/pages/Settings.tsx
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
   Card,
@@ -205,18 +205,29 @@ function Settings() {
     }
   };
 
-  const handleUpdateAutoPostInterval = async (
-    id: number,
-    min_interval_seconds: number,
-    max_interval_seconds: number
-  ) => {
-    try {
-      const updated = await updateAutoPostTemplate(id, { min_interval_seconds, max_interval_seconds });
-      setAutoPostTemplates((prev) => prev.map((t) => (t.id === id ? updated : t)));
-    } catch {
-      message.error("Cập nhật thất bại");
-    }
-  };
+  // Debounce timer ref to avoid API call per keystroke
+  const intervalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleUpdateAutoPostInterval = useCallback(
+    (id: number, min_interval_seconds: number, max_interval_seconds: number) => {
+      // Update UI immediately
+      setAutoPostTemplates((prev) =>
+        prev.map((t) =>
+          t.id === id ? { ...t, min_interval_seconds, max_interval_seconds } : t
+        )
+      );
+      // Debounce the API call
+      if (intervalTimerRef.current) clearTimeout(intervalTimerRef.current);
+      intervalTimerRef.current = setTimeout(async () => {
+        try {
+          await updateAutoPostTemplate(id, { min_interval_seconds, max_interval_seconds });
+        } catch {
+          message.error("Cập nhật thất bại");
+        }
+      }, 800);
+    },
+    []
+  );
 
   const handleSaveKnowledgeConfig = async () => {
     setKnowledgeLoading(true);

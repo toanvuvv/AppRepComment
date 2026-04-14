@@ -10,13 +10,13 @@ from openai import AsyncOpenAI
 logger = logging.getLogger(__name__)
 
 INTENT_CATEGORIES = {
-    "product_consult": "tu van/hoi chi tiet san pham",
-    "stock_inquiry": "hoi con hang, con variant khong",
-    "price_inquiry": "hoi gia, voucher, giam gia",
-    "purchase_intent": "muon mua, chot don",
-    "positive_review": "khen ngoi, hai long",
-    "complaint": "khieu nai",
-    "other": "chao hoi, khong lien quan",
+    "product_consult": "tư vấn/hỏi chi tiết sản phẩm",
+    "stock_inquiry": "hỏi còn hàng, còn variant không",
+    "price_inquiry": "hỏi giá, voucher, giảm giá",
+    "purchase_intent": "muốn mua, chốt đơn",
+    "positive_review": "khen ngợi, hài lòng",
+    "complaint": "khiếu nại",
+    "other": "chào hỏi, không liên quan",
 }
 
 # Regex patterns for product reference extraction
@@ -180,7 +180,7 @@ async def generate_knowledge_reply(
     if product_context:
         price_display = _format_price(product_context.get("price_min"), product_context.get("price_max"))
         discount = product_context.get("discount_pct") or 0
-        stock_text = "Con hang" if product_context.get("in_stock") else "Het hang"
+        stock_text = "Còn hàng" if product_context.get("in_stock") else "Hết hàng"
         stock_qty = product_context.get("stock_qty") or 0
         sold = product_context.get("sold") or 0
         rating = product_context.get("rating") or 0
@@ -190,39 +190,39 @@ async def generate_knowledge_reply(
         if product_context.get("voucher_info"):
             try:
                 vouchers = json.loads(product_context["voucher_info"])
-                voucher_text = ", ".join(vouchers) if vouchers else "Khong co"
+                voucher_text = ", ".join(vouchers) if vouchers else "Không có"
             except (json.JSONDecodeError, TypeError):
-                voucher_text = "Khong co"
+                voucher_text = "Không có"
 
         product_section = (
-            f"\nThong tin san pham #{product_context.get('product_order', '?')}:\n"
-            f"- Ten: {product_context.get('name', 'N/A')}\n"
-            f"- Gia: {price_display}\n"
-            f"- Giam gia: {discount}%\n"
-            f"- Tinh trang: {stock_text} ({stock_qty} san pham)\n"
-            f"- Da ban: {sold}+\n"
-            f"- Danh gia: {rating}/5 ({rating_count} danh gia)\n"
+            f"\nThông tin sản phẩm #{product_context.get('product_order', '?')}:\n"
+            f"- Tên: {product_context.get('name', 'N/A')}\n"
+            f"- Giá: {price_display}\n"
+            f"- Giảm giá: {discount}%\n"
+            f"- Tình trạng: {stock_text} ({stock_qty} sản phẩm)\n"
+            f"- Đã bán: {sold}+\n"
+            f"- Đánh giá: {rating}/5 ({rating_count} đánh giá)\n"
             f"- Voucher: {voucher_text}\n"
         )
     else:
-        product_section = "\nKhong xac dinh duoc san pham cu the tu comment.\n"
+        product_section = "\nKhông xác định được sản phẩm cụ thể từ comment.\n"
 
     intent_instruction = (
-        "Truoc khi tra loi, xac dinh y dinh (intent) cua khach hang:\n"
-        "- product_consult: hoi chi tiet/tu van san pham -> tra loi thong tin san pham\n"
-        "- stock_inquiry: hoi con hang, con size -> tra loi tinh trang ton kho\n"
-        "- price_inquiry: hoi gia, voucher, giam gia -> tra loi gia va khuyen mai\n"
-        "- shipping_inquiry: hoi van chuyen, ship, giao hang -> tra loi ve van chuyen\n"
-        "- purchase_intent: muon mua, chot don -> huong dan chot don\n"
-        "- positive_review: khen, hai long -> cam on\n"
-        "- complaint: khieu nai, phan nan -> xin loi va ho tro\n"
-        "- other: chao hoi, khong lien quan -> chao va moi xem live\n"
-        "Tra loi phu hop voi intent, KHONG tra loi thong tin san pham neu khach khong hoi ve san pham.\n"
+        "Trước khi trả lời, xác định ý định (intent) của khách hàng:\n"
+        "- product_consult: hỏi chi tiết/tư vấn sản phẩm -> trả lời thông tin sản phẩm\n"
+        "- stock_inquiry: hỏi còn hàng, còn size -> trả lời tình trạng tồn kho\n"
+        "- price_inquiry: hỏi giá, voucher, giảm giá -> trả lời giá và khuyến mãi\n"
+        "- shipping_inquiry: hỏi vận chuyển, ship, giao hàng -> trả lời về vận chuyển\n"
+        "- purchase_intent: muốn mua, chốt đơn -> hướng dẫn chốt đơn\n"
+        "- positive_review: khen, hài lòng -> cảm ơn\n"
+        "- complaint: khiếu nại, phàn nàn -> xin lỗi và hỗ trợ\n"
+        "- other: chào hỏi, không liên quan -> chào và mời xem live\n"
+        "Trả lời phù hợp với intent, KHÔNG trả lời thông tin sản phẩm nếu khách không hỏi về sản phẩm.\n"
     )
 
     system_prompt = (
-        "Ban la nhan vien tu van ban hang tren Shopee Live. "
-        "Tra loi ngan gon (toi da 2-3 cau), than thien, co emoji phu hop.\n"
+        "Bạn là nhân viên tư vấn bán hàng trên Shopee Live. "
+        "Trả lời ngắn gọn (tối đa 2-3 câu), thân thiện, có emoji phù hợp.\n"
         f"{intent_instruction}"
         f"{product_section}"
     )
@@ -231,14 +231,16 @@ async def generate_knowledge_reply(
         system_prompt = f"{system_prompt_override}\n{intent_instruction}{product_section}"
 
     try:
-        client = AsyncOpenAI(api_key=api_key)
+        from app.services.ai_reply_service import _get_client
+
+        client = _get_client(api_key)
         response = await client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": f"Khach hang {guest_name} binh luan: {comment_text}",
+                    "content": f"Khách hàng {guest_name} bình luận: {comment_text}",
                 },
             ],
             max_tokens=200,
@@ -253,7 +255,7 @@ async def generate_knowledge_reply(
 def _format_price(price_min: int | None, price_max: int | None) -> str:
     """Format price range for display."""
     if price_min is None and price_max is None:
-        return "Lien he"
+        return "Liên hệ"
     if price_min == price_max or price_max is None:
         return f"{_format_vnd(price_min)}d"
     if price_min is None:

@@ -39,7 +39,10 @@ class KnowledgeProductService:
 
         Handles the format: { "data": { "items": [...] } }
         """
-        data = json.loads(raw_json)
+        try:
+            data = json.loads(raw_json)
+        except json.JSONDecodeError:
+            raise ValueError("JSON không hợp lệ")
 
         items = []
         if isinstance(data, dict):

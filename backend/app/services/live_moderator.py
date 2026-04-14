@@ -71,6 +71,8 @@ class ShopeeLiveModerator:
                 NickLiveSetting.moderator_config.isnot(None)
             ).all()
             for row in rows:
+                if not row.moderator_config:
+                    continue
                 try:
                     config = json.loads(row.moderator_config)
                     self._configs[row.nick_live_id] = config
@@ -211,9 +213,7 @@ class ShopeeLiveModerator:
 
         url = f"https://{_REQUIRED_HOST}/api/v1/session/{live_session_id}/message"
 
-        # Debug: log request details
-        logger.warning(f"[reply] URL: {url}")
-        logger.warning(f"[reply] Body: {json.dumps(body, ensure_ascii=False)}")
+        logger.debug(f"[reply] URL: {url}")
 
         try:
             async with httpx.AsyncClient() as client:
@@ -229,7 +229,8 @@ class ShopeeLiveModerator:
                     try:
                         resp_data = resp.json()
                         is_success = resp_data.get("err_code") == 0
-                    except Exception:
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse reply response for {guest_name}")
                         is_success = False
                 if not is_success:
                     logger.warning(

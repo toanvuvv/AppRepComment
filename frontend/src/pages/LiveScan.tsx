@@ -102,6 +102,7 @@ function LiveScan() {
 
   const commentsEndRef = useRef<HTMLDivElement>(null);
   const prevCommentCountRef = useRef(0);
+  const prevPolledCountRef = useRef(0);
   const commentContainerRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
 
@@ -110,7 +111,7 @@ function LiveScan() {
       const data = await listNickLives();
       setNickLives(data);
     } catch {
-      message.error("Khong the tai danh sach nick live");
+      message.error("Không thể tải danh sách nick live");
     }
   }, []);
 
@@ -138,7 +139,8 @@ function LiveScan() {
         }
         setCommentCount(status.comment_count);
         // Only fetch full comments if count changed
-        if (status.comment_count !== prevCommentCountRef.current) {
+        if (status.comment_count !== prevPolledCountRef.current) {
+          prevPolledCountRef.current = status.comment_count;
           const latestComments = await getComments(selectedId);
           setComments(latestComments);
         }
@@ -152,25 +154,25 @@ function LiveScan() {
 
   const handleAdd = useCallback(async () => {
     if (!jsonInput.trim()) {
-      message.error("Vui long nhap JSON");
+      message.error("Vui lòng nhập JSON");
       return;
     }
     try {
       const parsed = JSON.parse(jsonInput);
       if (!parsed.user || !parsed.cookies) {
-        message.error("JSON phai co truong 'user' va 'cookies'");
+        message.error("JSON phải có trường 'user' và 'cookies'");
         return;
       }
       setAddLoading(true);
       await createNickLive({ user: parsed.user, cookies: parsed.cookies });
-      message.success("Them nick live thanh cong");
+      message.success("Thêm nick live thành công");
       setJsonInput("");
       await loadNickLives();
     } catch (err: unknown) {
       if (err instanceof SyntaxError) {
-        message.error("JSON khong hop le");
+        message.error("JSON không hợp lệ");
       } else {
-        message.error("Khong the them nick live");
+        message.error("Không thể thêm nick live");
       }
     } finally {
       setAddLoading(false);
@@ -181,7 +183,7 @@ function LiveScan() {
     async (id: number) => {
       try {
         await deleteNickLive(id);
-        message.success("Da xoa nick live");
+        message.success("Đã xóa nick live");
         if (selectedId === id) {
           setSelectedId(null);
           setSessions([]);
@@ -191,7 +193,7 @@ function LiveScan() {
         }
         await loadNickLives();
       } catch {
-        message.error("Khong the xoa nick live");
+        message.error("Không thể xóa nick live");
       }
     },
     [selectedId, loadNickLives]
@@ -205,7 +207,7 @@ function LiveScan() {
       setSessions(data.sessions);
       setActiveSession(data.active_session);
     } catch {
-      message.error("Khong the kiem tra phien live");
+      message.error("Không thể kiểm tra phiên live");
     } finally {
       setSessionsLoading(false);
     }
@@ -219,7 +221,7 @@ function LiveScan() {
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       if (detail !== "Already scanning") {
-        message.error("Khong the bat dau quet");
+        message.error("Không thể bắt đầu quét");
         setScanLoading(false);
         return;
       }
@@ -233,9 +235,9 @@ function LiveScan() {
       setComments(existing);
       setCommentCount(status.comment_count);
       setIsScanning(true);
-      message.success("Bat dau quet comment");
+      message.success("Bắt đầu quét comment");
     } catch {
-      message.error("Khong the lay trang thai quet");
+      message.error("Không thể lấy trạng thái quét");
     } finally {
       setScanLoading(false);
     }
@@ -246,9 +248,9 @@ function LiveScan() {
     try {
       await stopScan(selectedId);
       setIsScanning(false);
-      message.success("Da dung quet comment");
+      message.success("Đã dừng quét comment");
     } catch {
-      message.error("Khong the dung quet");
+      message.error("Không thể dừng quét");
     }
   }, [selectedId]);
 
@@ -303,17 +305,17 @@ function LiveScan() {
 
   const handleSaveCurl = useCallback(async () => {
     if (!selectedId || !curlInput.trim()) {
-      message.error("Vui long dan cURL moderator");
+      message.error("Vui lòng dán cURL moderator");
       return;
     }
     setCurlLoading(true);
     try {
       await saveModeratorCurl(selectedId, curlInput);
-      message.success("Luu cURL moderator thanh cong");
+      message.success("Lưu cURL moderator thành công");
       setCurlInput("");
       await loadModStatus();
     } catch {
-      message.error("Khong the parse cURL");
+      message.error("Không thể parse cURL");
     } finally {
       setCurlLoading(false);
     }
@@ -323,17 +325,17 @@ function LiveScan() {
     if (!selectedId) return;
     try {
       await removeModerator(selectedId);
-      message.success("Da xoa moderator");
+      message.success("Đã xóa moderator");
       await loadModStatus();
     } catch {
-      message.error("Khong the xoa moderator");
+      message.error("Không thể xóa moderator");
     }
   }, [selectedId, loadModStatus]);
 
   const handleSendReply = useCallback(
     async (comment: CommentItem) => {
       if (!selectedId || !replyText.trim()) {
-        message.error("Nhap noi dung reply");
+        message.error("Nhập nội dung reply");
         return;
       }
       const guestName = getDisplayName(comment);
@@ -342,14 +344,14 @@ function LiveScan() {
       try {
         const result = await sendModeratorReply(selectedId, guestName, guestId, replyText);
         if (result.success) {
-          message.success(`Da reply @${guestName}`);
+          message.success(`Đã reply @${guestName}`);
         } else {
-          message.error(`Reply that bai: ${result.error || result.response || "Unknown error"}`);
+          message.error(`Reply thất bại: ${result.error || result.response || "Unknown error"}`);
         }
-        setReplyResults((prev) => [...prev, result]);
+        setReplyResults((prev) => [...prev, result].slice(-100));
       } catch (err: unknown) {
         const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-        message.error(detail || "Khong the gui reply");
+        message.error(detail || "Không thể gửi reply");
       } finally {
         setReplyLoading(false);
       }
@@ -359,17 +361,17 @@ function LiveScan() {
 
   const handleAutoReply = useCallback(async () => {
     if (!selectedId || !replyText.trim() || comments.length === 0) {
-      message.error("Can noi dung reply va comments");
+      message.error("Cần nội dung reply và comments");
       return;
     }
     setReplyLoading(true);
     try {
       const results = await autoReplyComments(selectedId, comments, replyText);
       const successCount = results.filter((r) => r.success).length;
-      message.success(`Da reply ${successCount}/${results.length} comment`);
+      message.success(`Đã reply ${successCount}/${results.length} comment`);
       setReplyResults(results);
     } catch {
-      message.error("Auto reply that bai");
+      message.error("Auto reply thất bại");
     } finally {
       setReplyLoading(false);
     }
@@ -377,36 +379,36 @@ function LiveScan() {
 
   const sessionColumns: ColumnsType<LiveSession> = [
     { title: "Session ID", dataIndex: "sessionId", key: "sessionId", width: 100 },
-    { title: "Tieu de", dataIndex: "title", key: "title", ellipsis: true },
+    { title: "Tiêu đề", dataIndex: "title", key: "title", ellipsis: true },
     {
-      title: "Bat dau",
+      title: "Bắt đầu",
       dataIndex: "startTime",
       key: "startTime",
       render: (v: number) => formatDateTime(v),
       width: 180,
     },
     {
-      title: "Trang thai",
+      title: "Trạng thái",
       dataIndex: "status",
       key: "status",
       render: (v: number) =>
-        v === 1 ? <Tag color="green">Dang live</Tag> : <Tag>Ket thuc</Tag>,
+        v === 1 ? <Tag color="green">Đang live</Tag> : <Tag>Kết thúc</Tag>,
       width: 100,
     },
-    { title: "Luot xem", dataIndex: "views", key: "views", width: 100 },
-    { title: "Nguoi xem", dataIndex: "viewers", key: "viewers", width: 100 },
+    { title: "Lượt xem", dataIndex: "views", key: "views", width: 100 },
+    { title: "Người xem", dataIndex: "viewers", key: "viewers", width: 100 },
     { title: "Comment", dataIndex: "comments", key: "comments", width: 100 },
   ];
 
   return (
     <div>
-      <Title level={3}>Quet Comment Live Shopee</Title>
+      <Title level={3}>Quét Comment Live Shopee</Title>
 
       {/* Section 1: Add NickLive */}
-      <Card title="Them Nick Live" style={{ marginBottom: 16 }}>
+      <Card title="Thêm Nick Live" style={{ marginBottom: 16 }}>
         <TextArea
           rows={4}
-          placeholder='Dan JSON vao day, vi du: {"user": {...}, "cookies": "..."}'
+          placeholder='Dán JSON vào đây, ví dụ: {"user": {...}, "cookies": "..."}'
           value={jsonInput}
           onChange={(e) => setJsonInput(e.target.value)}
         />
@@ -416,14 +418,14 @@ function LiveScan() {
           loading={addLoading}
           style={{ marginTop: 8 }}
         >
-          Them
+          Thêm
         </Button>
       </Card>
 
       {/* Section 2: NickLive List */}
-      <Card title="Danh sach Nick Live" style={{ marginBottom: 16 }}>
+      <Card title="Danh sách Nick Live" style={{ marginBottom: 16 }}>
         {nickLives.length === 0 ? (
-          <Text type="secondary">Chua co nick live nao</Text>
+          <Text type="secondary">Chưa có nick live nào</Text>
         ) : (
           <Row gutter={[12, 12]}>
             {nickLives.map((nl) => (
@@ -449,7 +451,7 @@ function LiveScan() {
                   actions={[
                     <Popconfirm
                       key="delete"
-                      title="Xac nhan xoa nick live nay?"
+                      title="Xác nhận xóa nick live này?"
                       onConfirm={(e) => {
                         e?.stopPropagation();
                         handleDelete(nl.id);
@@ -463,7 +465,7 @@ function LiveScan() {
                         size="small"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        Xoa
+                        Xóa
                       </Button>
                     </Popconfirm>,
                   ]}
@@ -487,13 +489,13 @@ function LiveScan() {
 
       {/* Section 3: Live Sessions */}
       {selectedId && (
-        <Card title="Phien Live" style={{ marginBottom: 16 }}>
+        <Card title="Phiên Live" style={{ marginBottom: 16 }}>
           <Button
             icon={<ReloadOutlined />}
             onClick={handleCheckSessions}
             loading={sessionsLoading}
           >
-            Kiem tra phien live
+            Kiểm tra phiên live
           </Button>
 
           <Divider />
@@ -504,7 +506,7 @@ function LiveScan() {
               title={
                 <Space>
                   <Badge status="processing" />
-                  <span>Phien live dang hoat dong</span>
+                  <span>Phiên live đang hoạt động</span>
                 </Space>
               }
               style={{
@@ -518,17 +520,17 @@ function LiveScan() {
                 </Text>
                 <Text>Session ID: {activeSession.sessionId}</Text>
                 <Text>
-                  Bat dau: {formatDateTime(activeSession.startTime)}
+                  Bắt đầu: {formatDateTime(activeSession.startTime)}
                 </Text>
                 <Space>
                   <Tag color="blue">
-                    Luot xem: {activeSession.views}
+                    Lượt xem: {activeSession.views}
                   </Tag>
                   <Tag color="cyan">
-                    Dang xem: {activeSession.viewers}
+                    Đang xem: {activeSession.viewers}
                   </Tag>
                   <Tag color="purple">
-                    Dinh: {activeSession.peakViewers}
+                    Đỉnh: {activeSession.peakViewers}
                   </Tag>
                 </Space>
               </Space>
@@ -542,7 +544,7 @@ function LiveScan() {
                   disabled={isScanning}
                   style={{ backgroundColor: "#52c41a", borderColor: "#52c41a" }}
                 >
-                  Bat dau quet comment
+                  Bắt đầu quét comment
                 </Button>
               </div>
             </Card>
@@ -550,7 +552,7 @@ function LiveScan() {
             sessions.length > 0 && (
               <Alert
                 type="warning"
-                message="Khong co phien live nao dang hoat dong"
+                message="Không có phiên live nào đang hoạt động"
                 style={{ marginBottom: 16 }}
                 showIcon
               />
@@ -576,7 +578,7 @@ function LiveScan() {
           title={
             <Space>
               <Spin size="small" />
-              <span>Dang quet...</span>
+              <span>Đang quét...</span>
               <Badge
                 count={commentCount}
                 overflowCount={99999}
@@ -591,7 +593,7 @@ function LiveScan() {
               icon={<StopOutlined />}
               onClick={handleStopScan}
             >
-              Dung quet
+              Dừng quét
             </Button>
           }
         >
@@ -611,7 +613,7 @@ function LiveScan() {
             }}
           >
             {comments.length === 0 ? (
-              <Text type="secondary">Chua co comment nao...</Text>
+              <Text type="secondary">Chưa có comment nào...</Text>
             ) : (
               comments.map((c, idx) => (
                 <div
@@ -650,8 +652,8 @@ function LiveScan() {
           {!activeSession ? (
             <Alert
               type="warning"
-              message="Khong co phien live dang hoat dong"
-              description="Can co phien live dang hoat dong de su dung moderator. Hay kiem tra phien live truoc."
+              message="Không có phiên live đang hoạt động"
+              description="Cần có phiên live đang hoạt động để sử dụng moderator. Hãy kiểm tra phiên live trước."
               showIcon
               style={{ marginBottom: 16 }}
             />
@@ -659,27 +661,27 @@ function LiveScan() {
             <>
               {/* Save cURL */}
               <Card
-                title="Luu cURL Moderator"
+                title="Lưu cURL Moderator"
                 style={{ marginBottom: 16 }}
                 extra={
                   modStatus?.configured ? (
                     <Space>
-                      <Tag color="green">Da cau hinh</Tag>
+                      <Tag color="green">Đã cấu hình</Tag>
                       <Tag>Host: {modStatus.host_id || "N/A"}</Tag>
-                      <Popconfirm title="Xoa moderator?" onConfirm={handleRemoveModerator}>
+                      <Popconfirm title="Xóa moderator?" onConfirm={handleRemoveModerator}>
                         <Button type="text" danger icon={<DeleteOutlined />} size="small">
-                          Xoa
+                          Xóa
                         </Button>
                       </Popconfirm>
                     </Space>
                   ) : (
-                    <Tag color="red">Chua cau hinh</Tag>
+                    <Tag color="red">Chưa cấu hình</Tag>
                   )
                 }
               >
                 <TextArea
                   rows={4}
-                  placeholder="Dan cURL moderator vao day (curl https://live.shopee.vn/api/v1/session/.../message ...)"
+                  placeholder="Dán cURL moderator vào đây (curl https://live.shopee.vn/api/v1/session/.../message ...)"
                   value={curlInput}
                   onChange={(e) => setCurlInput(e.target.value)}
                 />
@@ -689,7 +691,7 @@ function LiveScan() {
                   loading={curlLoading}
                   style={{ marginTop: 8 }}
                 >
-                  {modStatus?.configured ? "Cap nhat cURL" : "Luu cURL"}
+                  {modStatus?.configured ? "Cập nhật cURL" : "Lưu cURL"}
                 </Button>
               </Card>
 
@@ -771,7 +773,7 @@ function LiveScan() {
                 <Card title="Reply Comment" style={{ marginBottom: 16 }}>
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Input
-                      placeholder="Noi dung reply (VD: Cam on ban da hoi!)"
+                      placeholder="Nội dung reply (VD: Cảm ơn bạn đã hỏi!)"
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
                       onPressEnter={handleAutoReply}
@@ -782,14 +784,14 @@ function LiveScan() {
                       loading={replyLoading}
                       disabled={!replyText.trim() || comments.length === 0}
                     >
-                      Auto Reply tat ca ({comments.length} comment)
+                      Auto Reply tất cả ({comments.length} comment)
                     </Button>
                   </Space>
 
                   {/* Reply per comment */}
                   {comments.length > 0 && replyText.trim() && (
                     <div style={{ marginTop: 16, maxHeight: 300, overflowY: "auto" }}>
-                      <Text strong>Reply tung comment:</Text>
+                      <Text strong>Reply từng comment:</Text>
                       {comments.slice(-20).map((c, idx) => (
                         <div
                           key={c.id || idx}
@@ -823,7 +825,7 @@ function LiveScan() {
                   {/* Reply Results */}
                   {replyResults.length > 0 && (
                     <div style={{ marginTop: 16 }}>
-                      <Text strong>Ket qua reply:</Text>
+                      <Text strong>Kết quả reply:</Text>
                       {replyResults.slice(-10).map((r, idx) => (
                         <div key={idx} style={{ padding: "2px 8px" }}>
                           <Tag color={r.success ? "green" : "red"}>
@@ -843,7 +845,7 @@ function LiveScan() {
               {!isScanning && modStatus?.configured && (
                 <Alert
                   type="info"
-                  message="Bat dau quet comment de su dung reply"
+                  message="Bắt đầu quét comment để sử dụng reply"
                   showIcon
                   style={{ marginBottom: 16 }}
                 />

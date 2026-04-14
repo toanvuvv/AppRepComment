@@ -12,17 +12,17 @@ function AppLayout() {
     {
       key: "/",
       icon: <HomeOutlined />,
-      label: "Trang chu",
+      label: "Trang chủ",
     },
     {
       key: "/live-scan",
       icon: <CommentOutlined />,
-      label: "Quet Comment",
+      label: "Quét Comment",
     },
     {
       key: "/settings",
       icon: <SettingOutlined />,
-      label: "Cai dat AI",
+      label: "Cài đặt AI",
     },
   ];
 
