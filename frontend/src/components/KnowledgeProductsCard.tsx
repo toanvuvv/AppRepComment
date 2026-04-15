@@ -106,15 +106,19 @@ function KnowledgeProductsCardInner({ nickLiveId }: Props) {
     },
     {
       title: "Khuyến mãi",
-      width: 120,
+      width: 180,
       render: (_: unknown, r: KnowledgeProduct) => {
         const vouchers = parseJson(r.voucher_info);
         if (!vouchers.length) return "-";
-        return vouchers.map((v: string, i: number) => (
-          <Tag key={i} color="orange" style={{ marginBottom: 2 }}>
-            {v}
-          </Tag>
-        ));
+        return (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+            {vouchers.map((v: string, i: number) => (
+              <Tag key={i} color="orange" style={{ marginBottom: 2, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>
+                {v}
+              </Tag>
+            ))}
+          </div>
+        );
       },
     },
     {

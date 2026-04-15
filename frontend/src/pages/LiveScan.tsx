@@ -16,6 +16,7 @@ import {
   message,
   Divider,
   Switch,
+  Modal,
 } from "antd";
 import {
   UserOutlined,
@@ -23,6 +24,7 @@ import {
   PlayCircleOutlined,
   ReloadOutlined,
   InfoCircleOutlined,
+  DatabaseOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -89,6 +91,9 @@ function LiveScan() {
   const [replyResults, setReplyResults] = useState<ModeratorReplyResult[]>([]);
   const [nickSettings, setNickSettings] = useState<NickLiveSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
+
+  // Knowledge Products modal
+  const [knowledgeModalOpen, setKnowledgeModalOpen] = useState(false);
 
   // Ref for comments from CommentFeed (no re-renders)
   const commentsRef = useRef<CommentItem[]>([]);
@@ -680,9 +685,27 @@ function LiveScan() {
                 </Card>
               )}
 
-              {/* Knowledge Products Card */}
+              {/* Knowledge Products Modal */}
               {modStatus?.configured && (
-                <KnowledgeProductsCard nickLiveId={selectedId} />
+                <>
+                  <Button
+                    icon={<DatabaseOutlined />}
+                    onClick={() => setKnowledgeModalOpen(true)}
+                    style={{ marginBottom: 16 }}
+                  >
+                    Knowledge Products
+                  </Button>
+                  <Modal
+                    title="Knowledge Products"
+                    open={knowledgeModalOpen}
+                    onCancel={() => setKnowledgeModalOpen(false)}
+                    footer={null}
+                    width={1000}
+                    destroyOnClose={false}
+                  >
+                    <KnowledgeProductsCard nickLiveId={selectedId} />
+                  </Modal>
+                </>
               )}
 
               {/* Reply Controls - only when scanning AND moderator configured */}
