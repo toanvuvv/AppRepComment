@@ -25,8 +25,12 @@ import {
   ReloadOutlined,
   InfoCircleOutlined,
   DatabaseOutlined,
+  FileTextOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
+import { useReplyLogs } from "../hooks/useReplyLogs";
+import type { ReplyLog, ReplyOutcome } from "../api/replyLogs";
 import {
   type NickLive,
   type LiveSession,
@@ -53,6 +57,7 @@ import {
 } from "../api/settings";
 import KnowledgeProductsCard from "../components/KnowledgeProductsCard";
 import CommentFeed from "../components/CommentFeed";
+import NickConfigModal from "../components/NickConfigModal";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -69,6 +74,72 @@ function getDisplayName(c: CommentItem): string {
 
 function getCommentText(c: CommentItem): string {
   return c.content || c.comment || c.message || c.msg || "";
+}
+
+const OUTCOME_COLOR: Record<ReplyOutcome, string> = {
+  success: "green",
+  failed: "red",
+  dropped: "orange",
+  circuit_open: "volcano",
+  no_config: "default",
+};
+
+const OUTCOME_LABEL: Record<ReplyOutcome, string> = {
+  success: "OK",
+  failed: "FAIL",
+  dropped: "DROP",
+  circuit_open: "CIRCUIT",
+  no_config: "NO CFG",
+};
+
+function ReplyLogRow({ log }: { log: ReplyLog }) {
+  const time = new Date(log.created_at).toLocaleTimeString("vi-VN");
+  const detail =
+    log.outcome === "success"
+      ? log.reply_text
+      : log.error || `status=${log.status_code ?? "?"}`;
+  return (
+    <div
+      style={{
+        padding: "4px 0",
+        borderBottom: "1px solid #f0f0f0",
+        fontSize: 13,
+      }}
+    >
+      <Space size={6} wrap>
+        <Text type="secondary" style={{ fontSize: 11 }}>
+          {time}
+        </Text>
+        <Tag color={OUTCOME_COLOR[log.outcome]}>
+          {OUTCOME_LABEL[log.outcome] ?? log.outcome}
+        </Tag>
+        {log.reply_type && <Tag>{log.reply_type}</Tag>}
+        {log.cached_hit && <Tag color="cyan">cache</Tag>}
+        {log.latency_ms !== null && (
+          <Tag color="geekblue">{log.latency_ms}ms</Tag>
+        )}
+        <Text strong style={{ color: "#1677ff" }}>
+          @{log.guest_name || log.guest_id || "?"}
+        </Text>
+        {log.comment_text && (
+          <Text type="secondary" ellipsis style={{ maxWidth: 220 }}>
+            "{log.comment_text}"
+          </Text>
+        )}
+        {detail && (
+          <Text
+            ellipsis
+            style={{
+              maxWidth: 320,
+              color: log.outcome === "success" ? "#389e0d" : "#cf1322",
+            }}
+          >
+            → {detail}
+          </Text>
+        )}
+      </Space>
+    </div>
+  );
 }
 
 function LiveScan() {
@@ -92,8 +163,18 @@ function LiveScan() {
   const [nickSettings, setNickSettings] = useState<NickLiveSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
 
+  // Nick config modal
+  const [configNick, setConfigNick] = useState<{ id: number; name: string } | null>(null);
+
   // Knowledge Products modal
   const [knowledgeModalOpen, setKnowledgeModalOpen] = useState(false);
+
+  // Reply Logs modal
+  const [replyLogsModalOpen, setReplyLogsModalOpen] = useState(false);
+
+  // Reply logs (polled while scanning)
+  const { logs: replyLogs, stats: replyStats, index: replyLogIndex, refresh: refreshReplyLogs } =
+    useReplyLogs(selectedId, isScanning);
 
   // Ref for comments from CommentFeed (no re-renders)
   const commentsRef = useRef<CommentItem[]>([]);
@@ -434,6 +515,15 @@ function LiveScan() {
                         : "1px solid #d9d9d9",
                   }}
                   actions={[
+                    <Button
+                      key="config"
+                      size="small"
+                      icon={<SettingOutlined />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfigNick({ id: nl.id, name: nl.name });
+                      }}
+                    />,
                     <Popconfirm
                       key="delete"
                       title="Xác nhận xóa nick live này?"
@@ -563,7 +653,81 @@ function LiveScan() {
         isScanning={isScanning}
         onStopScan={handleStopScan}
         onCommentsChange={handleCommentsChange}
+        replyLogIndex={replyLogIndex}
       />
+
+      {/* Section 4b: Reply Logs summary */}
+      {selectedId && isScanning && (
+        <Card
+          size="small"
+          style={{ marginTop: 16 }}
+          title={
+            <Space wrap>
+              <span>Reply Logs (24h)</span>
+              {replyStats && (
+                <>
+                  <Tag color="blue">Tổng: {replyStats.total}</Tag>
+                  <Tag color="green">OK: {replyStats.success}</Tag>
+                  <Tag color="red">Fail: {replyStats.failed}</Tag>
+                  <Tag color="orange">Dropped: {replyStats.dropped}</Tag>
+                  <Tag color="volcano">Circuit: {replyStats.circuit_open}</Tag>
+                  <Tag>
+                    Success rate:{" "}
+                    {(replyStats.success_rate * 100).toFixed(1)}%
+                  </Tag>
+                  {replyStats.p50_latency_ms !== null && (
+                    <Tag color="geekblue">
+                      p50 {replyStats.p50_latency_ms}ms / p95{" "}
+                      {replyStats.p95_latency_ms}ms
+                    </Tag>
+                  )}
+                </>
+              )}
+            </Space>
+          }
+          extra={
+            <Space>
+              <Button size="small" onClick={refreshReplyLogs}>
+                <ReloadOutlined /> Refresh
+              </Button>
+              <Button
+                size="small"
+                icon={<FileTextOutlined />}
+                onClick={() => setReplyLogsModalOpen(true)}
+              >
+                Xem tất cả
+              </Button>
+            </Space>
+          }
+        >
+          {replyLogs.length === 0 ? (
+            <Text type="secondary">Chưa có reply log nào</Text>
+          ) : (
+            <div style={{ maxHeight: 220, overflowY: "auto" }}>
+              {replyLogs.slice(0, 20).map((log) => (
+                <ReplyLogRow key={log.id} log={log} />
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Reply Logs Modal */}
+      <Modal
+        title="Tất cả Reply Logs"
+        open={replyLogsModalOpen}
+        onCancel={() => setReplyLogsModalOpen(false)}
+        footer={null}
+        width={900}
+      >
+        <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
+          {replyLogs.length === 0 ? (
+            <Text type="secondary">Chưa có reply log nào</Text>
+          ) : (
+            replyLogs.map((log) => <ReplyLogRow key={log.id} log={log} />)
+          )}
+        </div>
+      </Modal>
 
       {/* Section 5: Moderator - only when nick selected */}
       {selectedId && (
@@ -794,6 +958,16 @@ function LiveScan() {
           )}
         </>
       )}
+      {/* Nick Config Modal */}
+      <NickConfigModal
+        nickLiveId={configNick?.id ?? 0}
+        nickName={configNick?.name ?? ""}
+        sessionId={
+          configNick?.id === selectedId ? (activeSession?.sessionId ?? 0) : 0
+        }
+        open={!!configNick}
+        onClose={() => setConfigNick(null)}
+      />
     </div>
   );
 }
