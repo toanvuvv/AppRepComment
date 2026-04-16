@@ -100,6 +100,17 @@ export async function deleteAutoPostTemplate(id: number): Promise<void> {
   await apiClient.delete(`/settings/auto-post-templates/${id}`);
 }
 
+// --- Relive API key ---
+
+export async function getReliveApiKey(): Promise<{ api_key_set: boolean; api_key: string }> {
+  const res = await apiClient.get("/settings/relive-api-key");
+  return res.data;
+}
+
+export async function updateReliveApiKey(api_key: string): Promise<void> {
+  await apiClient.put("/settings/relive-api-key", { api_key });
+}
+
 // --- Test AI ---
 
 export async function testAI(): Promise<{ reply: string; model: string }> {
