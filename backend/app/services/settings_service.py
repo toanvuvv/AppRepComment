@@ -122,6 +122,75 @@ class SettingsService:
             self._db.refresh(row)
         return row
 
+    # --- Per-nick reply templates ---
+
+    def get_reply_templates_for_nick(self, nick_live_id: int) -> list[ReplyTemplate]:
+        return (
+            self._db.query(ReplyTemplate)
+            .filter(ReplyTemplate.nick_live_id == nick_live_id)
+            .order_by(ReplyTemplate.created_at)
+            .all()
+        )
+
+    def create_reply_template_for_nick(self, nick_live_id: int, content: str) -> ReplyTemplate:
+        tmpl = ReplyTemplate(content=content, nick_live_id=nick_live_id)
+        self._db.add(tmpl)
+        self._db.commit()
+        self._db.refresh(tmpl)
+        return tmpl
+
+    def delete_reply_template_for_nick(self, nick_live_id: int, template_id: int) -> bool:
+        tmpl = (
+            self._db.query(ReplyTemplate)
+            .filter(ReplyTemplate.id == template_id, ReplyTemplate.nick_live_id == nick_live_id)
+            .first()
+        )
+        if not tmpl:
+            return False
+        self._db.delete(tmpl)
+        self._db.commit()
+        return True
+
+    # --- Per-nick auto-post templates ---
+
+    def get_auto_post_templates_for_nick(self, nick_live_id: int) -> list[AutoPostTemplate]:
+        return (
+            self._db.query(AutoPostTemplate)
+            .filter(AutoPostTemplate.nick_live_id == nick_live_id)
+            .order_by(AutoPostTemplate.created_at)
+            .all()
+        )
+
+    def create_auto_post_template_for_nick(
+        self,
+        nick_live_id: int,
+        content: str,
+        min_interval: int = 60,
+        max_interval: int = 300,
+    ) -> AutoPostTemplate:
+        tmpl = AutoPostTemplate(
+            content=content,
+            min_interval_seconds=min_interval,
+            max_interval_seconds=max_interval,
+            nick_live_id=nick_live_id,
+        )
+        self._db.add(tmpl)
+        self._db.commit()
+        self._db.refresh(tmpl)
+        return tmpl
+
+    def delete_auto_post_template_for_nick(self, nick_live_id: int, template_id: int) -> bool:
+        tmpl = (
+            self._db.query(AutoPostTemplate)
+            .filter(AutoPostTemplate.id == template_id, AutoPostTemplate.nick_live_id == nick_live_id)
+            .first()
+        )
+        if not tmpl:
+            return False
+        self._db.delete(tmpl)
+        self._db.commit()
+        return True
+
     def update_nick_settings(
         self,
         nick_live_id: int,
@@ -129,6 +198,9 @@ class SettingsService:
         auto_reply_enabled: bool | None = None,
         auto_post_enabled: bool | None = None,
         knowledge_reply_enabled: bool | None = None,
+        host_reply_enabled: bool | None = None,
+        host_auto_post_enabled: bool | None = None,
+        host_proxy: str | None = None,
     ) -> NickLiveSetting:
         row = self.get_or_create_nick_settings(nick_live_id)
 
@@ -149,6 +221,13 @@ class SettingsService:
             row.auto_reply_enabled = auto_reply_enabled
         if auto_post_enabled is not None:
             row.auto_post_enabled = auto_post_enabled
+
+        if host_reply_enabled is not None:
+            row.host_reply_enabled = host_reply_enabled
+        if host_auto_post_enabled is not None:
+            row.host_auto_post_enabled = host_auto_post_enabled
+        if host_proxy is not None:
+            row.host_proxy = host_proxy
 
         self._db.commit()
         self._db.refresh(row)
@@ -175,3 +254,21 @@ class SettingsService:
 
     def set_banned_words(self, words: list[str]) -> None:
         self.set_setting("banned_words", json.dumps(words, ensure_ascii=False))
+
+    # --- Host config helpers ---
+
+    def save_host_config(self, nick_live_id: int, usersig: str, uuid: str) -> NickLiveSetting:
+        row = self.get_or_create_nick_settings(nick_live_id)
+        row.host_config = json.dumps({"usersig": usersig, "uuid": uuid})
+        self._db.commit()
+        self._db.refresh(row)
+        return row
+
+    def get_host_config(self, nick_live_id: int) -> dict | None:
+        row = self.get_or_create_nick_settings(nick_live_id)
+        if not row.host_config:
+            return None
+        try:
+            return json.loads(row.host_config)
+        except (json.JSONDecodeError, TypeError):
+            return None
