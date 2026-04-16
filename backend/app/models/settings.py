@@ -49,12 +49,19 @@ class NickLiveSetting(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     nick_live_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
-    ai_reply_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    auto_reply_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # --- Reply config ---
+    # reply_mode: "none" | "knowledge" | "ai" | "template"
+    reply_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="none")
+    reply_to_host: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reply_to_moderator: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # --- Auto-post config ---
     auto_post_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    knowledge_reply_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    auto_post_to_host: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    auto_post_to_moderator: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # --- Credentials ---
     moderator_config: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
     host_config: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
     host_proxy: Mapped[str | None] = mapped_column(Text, nullable=True)
-    host_reply_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    host_auto_post_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

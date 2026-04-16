@@ -263,16 +263,20 @@ def update_nick_settings(
     nick_live_id: int, payload: NickLiveSettingsUpdate, db: Session = Depends(get_db)
 ):
     svc = SettingsService(db)
-    row = svc.update_nick_settings(
-        nick_live_id,
-        ai_reply_enabled=payload.ai_reply_enabled,
-        auto_reply_enabled=payload.auto_reply_enabled,
-        auto_post_enabled=payload.auto_post_enabled,
-        knowledge_reply_enabled=payload.knowledge_reply_enabled,
-        host_reply_enabled=payload.host_reply_enabled,
-        host_auto_post_enabled=payload.host_auto_post_enabled,
-        host_proxy=payload.host_proxy,
-    )
+    try:
+        row = svc.update_nick_settings(
+            nick_live_id,
+            reply_mode=payload.reply_mode,
+            reply_to_host=payload.reply_to_host,
+            reply_to_moderator=payload.reply_to_moderator,
+            auto_post_enabled=payload.auto_post_enabled,
+            auto_post_to_host=payload.auto_post_to_host,
+            auto_post_to_moderator=payload.auto_post_to_moderator,
+            host_proxy=payload.host_proxy,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
     # Invalidate cached per-nick settings so the dispatcher picks up the
     # new toggles on its next reply cycle.
     from app.services.nick_cache import nick_cache
@@ -301,6 +305,7 @@ async def host_get_credentials(nick_live_id: int, db: Session = Depends(get_db))
     try:
         creds = await get_host_credentials(nick.cookies, api_key, proxy=proxy)
     except ValueError as exc:
+        logger.error("host_get_credentials failed for nick %s: %s", nick_live_id, exc)
         raise HTTPException(status_code=502, detail=str(exc))
 
     svc.save_host_config(nick_live_id, creds["usersig"], creds["uuid"])
@@ -370,7 +375,7 @@ async def host_post(
     if not moderator.has_host_config(nick_live_id):
         raise HTTPException(status_code=400, detail="Host not configured")
 
-    body = moderator.generate_host_post_body(nick_live_id, payload.content, use_host=True)
+    body = moderator.generate_host_post_body(nick_live_id, payload.content)
     if not body:
         raise HTTPException(status_code=400, detail="Failed to generate host message body")
 

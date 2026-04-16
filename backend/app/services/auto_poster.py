@@ -29,10 +29,20 @@ class AutoPoster:
         if self.is_running(nick_live_id):
             return {"status": "already_running"}
 
-        has_host = self._moderator.has_host_config(nick_live_id)
-        has_mod = self._moderator.has_config(nick_live_id)
-        if not has_host and not has_mod:
-            return {"error": "No host or moderator credentials configured"}
+        # Read per-nick settings (auto_post_enabled + channel toggles).
+        from app.services.nick_cache import nick_cache
+        settings = await nick_cache.get_settings(nick_live_id, SessionLocal)
+
+        if not settings.auto_post_enabled:
+            return {"error": "Auto post chưa được bật"}
+
+        if not settings.auto_post_to_host and not settings.auto_post_to_moderator:
+            return {"error": "Cần bật ít nhất 1 kênh (Host hoặc Moderator) cho Auto Post"}
+
+        if settings.auto_post_to_host and not self._moderator.has_host_config(nick_live_id):
+            return {"error": "Chưa cấu hình host credentials cho Auto Post Host"}
+        if settings.auto_post_to_moderator and not self._moderator.has_config(nick_live_id):
+            return {"error": "Chưa cấu hình moderator cURL cho Auto Post Moderator"}
 
         db = SessionLocal()
         try:
@@ -42,7 +52,7 @@ class AutoPoster:
             db.close()
 
         if not templates:
-            return {"error": "No auto-post templates for this nick"}
+            return {"error": "Chưa có template auto-post cho nick này"}
 
         self._template_index[nick_live_id] = 0
         task = asyncio.create_task(self._loop(nick_live_id, session_id, cookies))
@@ -92,22 +102,43 @@ class AutoPoster:
                 logger.debug(f"Auto-post nick={nick_live_id}: sleeping {interval:.0f}s")
                 await asyncio.sleep(interval)
 
-                result = await self._send(nick_live_id, session_id, cookies, tmpl.content)
+                channel_results = await self._send(
+                    nick_live_id, session_id, cookies, tmpl.content
+                )
 
-                reply_log_writer.enqueue({
-                    "nick_live_id": nick_live_id,
-                    "session_id": session_id,
-                    "guest_name": "[auto-post]",
-                    "guest_id": 0,
-                    "comment_text": "",
-                    "reply_text": tmpl.content,
-                    "outcome": "success" if result.get("success") else "failed",
-                    "error": result.get("error"),
-                    "status_code": result.get("status_code"),
-                    "latency_ms": 0,
-                    "llm_latency_ms": 0,
-                    "cached_hit": False,
-                })
+                if not channel_results:
+                    reply_log_writer.enqueue({
+                        "nick_live_id": nick_live_id,
+                        "session_id": session_id,
+                        "guest_name": "[auto-post]",
+                        "guest_id": 0,
+                        "comment_text": "",
+                        "reply_text": tmpl.content,
+                        "reply_type": "autopost",
+                        "outcome": "failed",
+                        "error": "no_channel_enabled",
+                        "status_code": None,
+                        "latency_ms": 0,
+                        "llm_latency_ms": 0,
+                        "cached_hit": False,
+                    })
+                else:
+                    for channel, result in channel_results:
+                        reply_log_writer.enqueue({
+                            "nick_live_id": nick_live_id,
+                            "session_id": session_id,
+                            "guest_name": "[auto-post]",
+                            "guest_id": 0,
+                            "comment_text": "",
+                            "reply_text": tmpl.content,
+                            "reply_type": f"autopost_{channel}",
+                            "outcome": "success" if result.get("success") else "failed",
+                            "error": result.get("error"),
+                            "status_code": result.get("status_code"),
+                            "latency_ms": 0,
+                            "llm_latency_ms": 0,
+                            "cached_hit": False,
+                        })
 
         except asyncio.CancelledError:
             logger.info(f"Auto-post loop cancelled for nick={nick_live_id}")
@@ -119,15 +150,27 @@ class AutoPoster:
 
     async def _send(
         self, nick_live_id: int, session_id: int, cookies: str, content: str,
-    ) -> dict[str, Any]:
-        if self._moderator.has_host_config(nick_live_id):
-            body = self._moderator.generate_host_post_body(nick_live_id, content, use_host=True)
-            if body:
-                return await self._moderator.send_host_message(nick_live_id, session_id, body, cookies)
+    ) -> list[tuple[str, dict[str, Any]]]:
+        """Send to each enabled channel independently. Returns list of (channel, result)."""
+        from app.services.nick_cache import nick_cache
+        settings = await nick_cache.get_settings(nick_live_id, SessionLocal)
 
-        if self._moderator.has_config(nick_live_id):
-            body = self._moderator.generate_host_post_body(nick_live_id, content, use_host=False)
-            if body:
-                return await self._moderator.send_reply_raw(nick_live_id, session_id, body)
+        results: list[tuple[str, dict[str, Any]]] = []
 
-        return {"success": False, "error": "no_credentials"}
+        if settings.auto_post_to_host and self._moderator.has_host_config(nick_live_id):
+            body = self._moderator.generate_host_post_body(nick_live_id, content)
+            if body:
+                r = await self._moderator.send_host_message(
+                    nick_live_id, session_id, body, cookies
+                )
+                results.append(("host", r))
+
+        if settings.auto_post_to_moderator and self._moderator.has_config(nick_live_id):
+            body = self._moderator.generate_moderator_post_body(nick_live_id, content)
+            if body:
+                r = await self._moderator.send_moderator_message(
+                    nick_live_id, session_id, body
+                )
+                results.append(("moderator", r))
+
+        return results

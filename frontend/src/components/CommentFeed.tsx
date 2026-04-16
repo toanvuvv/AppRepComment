@@ -1,8 +1,10 @@
 import { memo, useEffect, useRef } from "react";
-import { Badge, Button, Card, Space, Spin, Typography } from "antd";
+import { Badge, Button, Card, Space, Spin, Tag, Tooltip, Typography } from "antd";
 import { StopOutlined } from "@ant-design/icons";
 import { CommentItem } from "../api/nickLive";
 import { useSSEComments } from "../hooks/useSSEComments";
+import type { ReplyLog, ReplyOutcome } from "../api/replyLogs";
+import { buildLogKey, type ReplyLogIndex } from "../hooks/useReplyLogs";
 
 const { Text } = Typography;
 
@@ -11,6 +13,7 @@ interface CommentFeedProps {
   isScanning: boolean;
   onStopScan: () => void;
   onCommentsChange?: (comments: CommentItem[]) => void;
+  replyLogIndex?: ReplyLogIndex;
 }
 
 function formatTs(ts?: number): string {
@@ -27,11 +30,96 @@ function getCommentText(c: CommentItem): string {
   return c.content || c.comment || c.message || c.msg || "";
 }
 
+function getGuestId(c: CommentItem): number | undefined {
+  return c.streamerId || c.userId || c.user_id || c.uid;
+}
+
+const OUTCOME_META: Record<
+  ReplyOutcome,
+  { color: string; label: string }
+> = {
+  success: { color: "green", label: "Đã reply" },
+  failed: { color: "red", label: "Reply fail" },
+  dropped: { color: "orange", label: "Drop" },
+  circuit_open: { color: "volcano", label: "Circuit" },
+  no_config: { color: "default", label: "No config" },
+};
+
+function ReplyStatusTag({ log }: { log: ReplyLog }) {
+  const meta = OUTCOME_META[log.outcome] ?? {
+    color: "default",
+    label: log.outcome,
+  };
+  const tooltip = (
+    <div style={{ maxWidth: 360 }}>
+      <div>
+        <b>Outcome:</b> {log.outcome}
+      </div>
+      {log.reply_type && (
+        <div>
+          <b>Type:</b> {log.reply_type}
+        </div>
+      )}
+      {log.reply_text && (
+        <div>
+          <b>Reply:</b> {log.reply_text}
+        </div>
+      )}
+      {log.error && (
+        <div>
+          <b>Error:</b> {log.error}
+        </div>
+      )}
+      {log.status_code !== null && (
+        <div>
+          <b>Status:</b> {log.status_code}
+        </div>
+      )}
+      {log.latency_ms !== null && (
+        <div>
+          <b>Latency:</b> {log.latency_ms}ms
+        </div>
+      )}
+      {log.retry_count > 0 && (
+        <div>
+          <b>Retry:</b> {log.retry_count}
+        </div>
+      )}
+    </div>
+  );
+  return (
+    <Tooltip title={tooltip}>
+      <Tag color={meta.color} style={{ marginLeft: 6, cursor: "help" }}>
+        {meta.label}
+      </Tag>
+    </Tooltip>
+  );
+}
+
+function findLog(
+  index: ReplyLogIndex | undefined,
+  c: CommentItem
+): ReplyLog | undefined {
+  if (!index) return undefined;
+  const guestId = getGuestId(c);
+  const text = getCommentText(c);
+  const key = buildLogKey(guestId, text);
+  if (key) {
+    const hit = index.byCommentKey.get(key);
+    if (hit) return hit;
+  }
+  if (guestId !== undefined && guestId !== 0) {
+    return index.byGuest.get(String(guestId));
+  }
+  return undefined;
+}
+
 function CommentFeedInner({
   nickLiveId,
   isScanning,
   onStopScan,
   onCommentsChange,
+  replyLogIndex,
 }: CommentFeedProps) {
   const { comments, commentCount, isConnected } = useSSEComments(
     nickLiveId,
@@ -114,6 +202,7 @@ function CommentFeedInner({
             const name = getDisplayName(c);
             const text = getCommentText(c);
             const key = c.id ?? `${index}-${name}-${ts}`;
+            const log = findLog(replyLogIndex, c);
 
             return (
               <div
@@ -132,6 +221,7 @@ function CommentFeedInner({
                   {name}:
                 </Text>
                 <Text>{text}</Text>
+                {log && <ReplyStatusTag log={log} />}
               </div>
             );
           })

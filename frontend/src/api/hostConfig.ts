@@ -24,14 +24,26 @@ export interface ReplyTemplate {
   nick_live_id: number;
 }
 
+export type ReplyMode = "none" | "knowledge" | "ai" | "template";
+
 export interface NickLiveSettings {
   nick_live_id: number;
-  ai_reply_enabled: boolean;
-  auto_reply_enabled: boolean;
+  reply_mode: ReplyMode;
+  reply_to_host: boolean;
+  reply_to_moderator: boolean;
   auto_post_enabled: boolean;
-  knowledge_reply_enabled: boolean;
-  host_reply_enabled: boolean;
-  host_auto_post_enabled: boolean;
+  auto_post_to_host: boolean;
+  auto_post_to_moderator: boolean;
+}
+
+export interface NickLiveSettingsUpdate {
+  reply_mode?: ReplyMode;
+  reply_to_host?: boolean;
+  reply_to_moderator?: boolean;
+  auto_post_enabled?: boolean;
+  auto_post_to_host?: boolean;
+  auto_post_to_moderator?: boolean;
+  host_proxy?: string;
 }
 
 // --- Host credentials ---
@@ -145,7 +157,7 @@ export async function getNickSettings(nickLiveId: number): Promise<NickLiveSetti
 
 export async function updateNickSettings(
   nickLiveId: number,
-  updates: Partial<NickLiveSettings>
+  updates: NickLiveSettingsUpdate
 ): Promise<NickLiveSettings> {
   const res = await apiClient.put(`/nick-lives/${nickLiveId}/settings`, updates);
   return res.data;

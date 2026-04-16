@@ -1,72 +1,197 @@
+"""Background comment scanner.
+
+Polls Shopee Creator for new live comments per nick_live, deduplicates,
+buffers a bounded history, and broadcasts to SSE subscribers. Reply
+generation is delegated to `ReplyDispatcher` so the poll loop never
+blocks on LLM latency.
+"""
+from __future__ import annotations
+
 import asyncio
+import hashlib
 import logging
 import time
-from collections import defaultdict
+from collections import OrderedDict, defaultdict, deque
 
-from app.database import SessionLocal
+from app.config import COMMENTS_HISTORY_MAX, POLL_INTERVAL_SEC, SEEN_IDS_MAX
+from app.services.exceptions import ShopeeAuthError, ShopeeRateLimitError
+from app.services.reply_dispatcher import dispatcher
+from app.services.reply_log_writer import reply_log_writer
 from app.services.shopee_api import get_comments
 
 logger = logging.getLogger(__name__)
 
 
+class _LRUSet:
+    """Bounded insertion-ordered set; drops oldest keys past `cap`."""
+
+    def __init__(self, cap: int) -> None:
+        if cap <= 0:
+            raise ValueError("cap must be > 0")
+        self._cap = cap
+        self._data: OrderedDict[str, None] = OrderedDict()
+
+    def add(self, key: str) -> None:
+        if key in self._data:
+            self._data.move_to_end(key)
+            return
+        self._data[key] = None
+        if len(self._data) > self._cap:
+            self._data.popitem(last=False)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+
+def _comment_key(c: dict) -> str:
+    """Stable dedupe key for a raw Shopee comment dict."""
+    for field in ("id", "msg_id", "msgId"):
+        val = c.get(field)
+        if val is not None:
+            return str(val)
+
+    user_id = c.get("userId") or c.get("streamerId") or ""
+    ts = c.get("timestamp") or ""
+    content = c.get("content") or c.get("text") or ""
+    digest_src = f"{user_id}|{ts}|{content}".encode("utf-8")
+    return hashlib.md5(digest_src).hexdigest()
+
+
 class CommentScanner:
-    """Manages background comment polling tasks for multiple nick lives"""
+    """Manages background comment polling tasks for multiple nick lives."""
 
     def __init__(self) -> None:
-        self._tasks: dict[int, asyncio.Task] = {}  # nick_live_id -> Task
-        self._comments: dict[int, list] = defaultdict(list)  # nick_live_id -> comments
-        self._seen_ids: dict[int, set] = defaultdict(set)  # nick_live_id -> seen IDs
-        self._session_ids: dict[int, int] = {}  # nick_live_id -> session_id
-        self._new_comments: dict[int, asyncio.Queue] = {}  # for SSE streaming
+        self._tasks: dict[int, asyncio.Task] = {}
+        self._session_ids: dict[int, int] = {}
+        self._comments: dict[int, deque] = {}
+        self._seen_ids: dict[int, _LRUSet] = {}
+        self._subscribers: dict[int, set[asyncio.Queue]] = defaultdict(set)
+        self._locks: dict[int, asyncio.Lock] = {}
+
+        # Backward-compat alias: older tests/touch points may still look at
+        # `_new_comments`. Shares identity with `_subscribers`.
+        self._new_comments = self._subscribers
+
+    # --- status --------------------------------------------------------
 
     def is_scanning(self, nick_live_id: int) -> bool:
-        return nick_live_id in self._tasks and not self._tasks[nick_live_id].done()
+        task = self._tasks.get(nick_live_id)
+        return task is not None and not task.done()
 
     def get_status(self, nick_live_id: int) -> dict:
+        history = self._comments.get(nick_live_id)
         return {
             "is_scanning": self.is_scanning(nick_live_id),
             "session_id": self._session_ids.get(nick_live_id),
-            "comment_count": len(self._comments.get(nick_live_id, [])),
+            "comment_count": len(history) if history is not None else 0,
         }
 
     def get_comments(self, nick_live_id: int) -> list:
-        return list(self._comments.get(nick_live_id, []))
+        history = self._comments.get(nick_live_id)
+        if history is None:
+            return []
+        return list(history)
+
+    # --- subscriptions -------------------------------------------------
+
+    def subscribe(self, nick_live_id: int) -> asyncio.Queue:
+        """Register a new SSE subscriber queue for the given nick."""
+        q: asyncio.Queue = asyncio.Queue(maxsize=1000)
+        self._subscribers[nick_live_id].add(q)
+        return q
+
+    def unsubscribe(self, nick_live_id: int, queue: asyncio.Queue) -> None:
+        subs = self._subscribers.get(nick_live_id)
+        if subs is not None:
+            subs.discard(queue)
 
     def get_queue(self, nick_live_id: int) -> asyncio.Queue:
-        if nick_live_id not in self._new_comments:
-            self._new_comments[nick_live_id] = asyncio.Queue()
-        return self._new_comments[nick_live_id]
+        """Backward-compat: returns a newly-subscribed queue.
+
+        Prefer `subscribe(...)` + `unsubscribe(...)` in new code.
+        """
+        return self.subscribe(nick_live_id)
+
+    def _broadcast(self, nick_live_id: int, comment: dict) -> None:
+        for q in list(self._subscribers.get(nick_live_id, ())):
+            try:
+                q.put_nowait(comment)
+            except asyncio.QueueFull:
+                logger.warning(
+                    f"Slow SSE consumer for nick={nick_live_id}; dropping"
+                )
+
+    # --- lifecycle -----------------------------------------------------
 
     def start(
         self,
         nick_live_id: int,
         session_id: int,
         cookies: str,
-        poll_interval: float = 2.0,
+        poll_interval: float = POLL_INTERVAL_SEC,
     ) -> None:
+        """Idempotently start the poll loop for a nick.
+
+        Sync by design: the entire body runs without an `await`, so in a
+        single-threaded asyncio loop concurrent callers cannot interleave.
+        """
         if self.is_scanning(nick_live_id):
             return
 
         self._session_ids[nick_live_id] = session_id
-        self._comments[nick_live_id] = []
-        self._seen_ids[nick_live_id] = set()
-        self._new_comments[nick_live_id] = asyncio.Queue()
+        self._comments[nick_live_id] = deque(maxlen=COMMENTS_HISTORY_MAX)
+        self._seen_ids[nick_live_id] = _LRUSet(cap=SEEN_IDS_MAX)
+        self._subscribers.setdefault(nick_live_id, set())
+
+        # Start reply dispatcher BEFORE scheduling the poll task so the
+        # first enqueue from the loop already has workers ready.
+        dispatcher.start(nick_live_id, session_id, cookies)
 
         task = asyncio.create_task(
-            self._poll_loop(nick_live_id, session_id, cookies, poll_interval)
+            self._poll_loop(nick_live_id, session_id, cookies, poll_interval),
+            name=f"scanner-poll-{nick_live_id}",
         )
         self._tasks[nick_live_id] = task
+        logger.info(
+            f"Started scanner for nick_live={nick_live_id} session={session_id}"
+        )
 
     def stop(self, nick_live_id: int) -> None:
-        task = self._tasks.get(nick_live_id)
-        if task and not task.done():
+        """Stop scanning and notify subscribers."""
+        task = self._tasks.pop(nick_live_id, None)
+        if task is not None and not task.done():
             task.cancel()
-        self._tasks.pop(nick_live_id, None)
+
+        # Signal SSE subscribers that the stream is done.
+        for q in list(self._subscribers.get(nick_live_id, ())):
+            try:
+                q.put_nowait(None)
+            except asyncio.QueueFull:
+                logger.debug(
+                    f"Subscriber queue full at stop for nick={nick_live_id}"
+                )
+
+        dispatcher.stop(nick_live_id)
+
         self._session_ids.pop(nick_live_id, None)
-        # Keep comments but close queue
-        queue = self._new_comments.get(nick_live_id)
-        if queue:
-            queue.put_nowait(None)  # Signal end to SSE listeners
+        self._seen_ids.pop(nick_live_id, None)
+        # grace retention: keep _comments history so callers can still
+        # read the final buffer after stop(). It's reset on the next start().
+        logger.info(f"Stopped scanner for nick_live={nick_live_id}")
+
+    # Back-compat shim: the pre-Wave-2 path called this method from the
+    # poll loop. The new implementation delegates to `ReplyDispatcher`
+    # instead, so this method is intentionally a no-op. Kept so existing
+    # tests (and any external monkey-patch) can still target it.
+    async def _process_auto_reply(
+        self, nick_live_id: int, session_id: int, comments: list
+    ) -> None:
+        return None
+
+    # --- poll loop -----------------------------------------------------
 
     async def _poll_loop(
         self,
@@ -76,215 +201,86 @@ class CommentScanner:
         poll_interval: float,
     ) -> None:
         last_ts = int(time.time())
-        logger.info(f"Started scanning nick_live={nick_live_id} session={session_id}")
+        backoff = 0.0
 
         try:
             while True:
                 try:
-                    items = await get_comments(cookies, session_id, last_ts)
-                    new_items = []
-                    for c in items:
-                        cid = (
-                            c.get("id")
-                            or c.get("msg_id")
-                            or c.get("msgId")
-                            or f"{c.get('timestamp')}_{c.get('content')}"
-                        )
-                        cid = str(cid)
-                        if cid not in self._seen_ids[nick_live_id]:
-                            self._seen_ids[nick_live_id].add(cid)
-                            self._comments[nick_live_id].append(c)
-                            queue = self._new_comments.get(nick_live_id)
-                            if queue:
-                                await queue.put(c)
-                            new_items.append(c)
+                    if backoff > 0:
+                        await asyncio.sleep(backoff)
+                        backoff = 0.0
 
-                    if new_items:
-                        await self._process_auto_reply(nick_live_id, session_id, new_items)
+                    items = await get_comments(cookies, session_id, last_ts)
+
+                    history = self._comments.get(nick_live_id)
+                    seen = self._seen_ids.get(nick_live_id)
+                    if history is None or seen is None:
+                        # We were stopped mid-poll.
+                        break
+
+                    new_items: list[dict] = []
+                    for c in items:
+                        key = _comment_key(c)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        history.append(c)
+                        self._broadcast(nick_live_id, c)
+                        new_items.append(c)
+
+                    # Delegate reply handling — never blocks polling.
+                    for c in new_items:
+                        if not await dispatcher.enqueue(nick_live_id, c):
+                            await reply_log_writer.log({
+                                "nick_live_id": nick_live_id,
+                                "session_id": session_id,
+                                "guest_name": c.get("username")
+                                or c.get("userName")
+                                or "Unknown",
+                                "guest_id": str(
+                                    c.get("userId") or c.get("streamerId") or ""
+                                ),
+                                "comment_text": c.get("content") or c.get("text"),
+                                "reply_text": None,
+                                "reply_type": None,
+                                "outcome": "dropped",
+                                "error": "reply_queue_full",
+                            })
 
                     if items:
-                        last_ts = int(time.time())
+                        max_ts = max(
+                            (int(c.get("timestamp") or 0) for c in items),
+                            default=last_ts,
+                        )
+                        # 5s safety window to avoid dropping late-arriving
+                        # comments around clock drift.
+                        last_ts = max(last_ts, max_ts - 5)
 
-                except Exception as e:
-                    logger.error(f"Poll error for nick_live={nick_live_id}: {e}")
+                except ShopeeAuthError as e:
+                    logger.error(
+                        f"Auth expired for nick_live={nick_live_id}: {e}; "
+                        f"stopping scanner"
+                    )
+                    break
+                except ShopeeRateLimitError:
+                    logger.warning(
+                        f"Rate limited on nick_live={nick_live_id}; "
+                        f"backing off 30s"
+                    )
+                    backoff = 30.0
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception(
+                        f"Poll error for nick_live={nick_live_id}"
+                    )
 
                 await asyncio.sleep(poll_interval)
         except asyncio.CancelledError:
-            logger.info(f"Stopped scanning nick_live={nick_live_id}")
-
-    async def _process_auto_reply(
-        self, nick_live_id: int, session_id: int, comments: list
-    ) -> None:
-        """Check if AI reply is enabled and auto-reply to new comments."""
-        from app.services.live_moderator import moderator
-        from app.services.settings_service import SettingsService
-
-        try:
-            db = SessionLocal()
-            try:
-                svc = SettingsService(db)
-                nick_settings = svc.get_or_create_nick_settings(nick_live_id)
-
-                if nick_settings.knowledge_reply_enabled:
-                    await self._process_knowledge_reply(
-                        nick_live_id, session_id, comments, svc, moderator, db
-                    )
-                elif nick_settings.ai_reply_enabled:
-                    await self._process_ai_reply(
-                        nick_live_id, session_id, comments, svc, moderator
-                    )
-            finally:
-                db.close()
-        except Exception as e:
-            logger.error(f"Auto-reply error for nick_live={nick_live_id}: {e}")
-
-    async def _process_ai_reply(
-        self, nick_live_id, session_id, comments, svc, moderator
-    ) -> None:
-        """Existing AI reply flow (unchanged logic)."""
-        from app.services.ai_reply_service import generate_reply
-
-        if not moderator.has_config(nick_live_id):
-            logger.warning(f"AI reply enabled but moderator not configured for nick_live={nick_live_id}")
-            return
-
-        api_key = svc.get_openai_api_key()
-        if not api_key:
-            logger.warning("AI reply enabled but OpenAI API key not set")
-            return
-
-        model = svc.get_setting("openai_model") or "gpt-4o"
-        system_prompt = svc.get_system_prompt() or "Bạn là nhân viên CSKH."
-
-        for c in comments:
-            content = c.get("content") or c.get("text") or ""
-            if not content:
-                continue
-
-            username = (
-                c.get("username")
-                or c.get("userName")
-                or c.get("nick_name")
-                or c.get("nickname")
-                or "Unknown"
-            )
-            user_id = c.get("streamerId") or c.get("userId") or 0
-
-            reply_text = await generate_reply(
-                api_key=api_key,
-                model=model,
-                system_prompt=system_prompt,
-                comment_text=content,
-                guest_name=username,
-            )
-            if reply_text:
-                result = await moderator.send_reply(
-                    nick_live_id, session_id, username, user_id, reply_text
-                )
-                logger.info(
-                    f"AI reply to {username}: {reply_text[:50]}... -> {result.get('success')}"
-                )
-            await asyncio.sleep(1)
-
-    async def _process_knowledge_reply(
-        self, nick_live_id, session_id, comments, svc, moderator, db
-    ) -> None:
-        """Knowledge-based AI reply flow with product context."""
-        import json
-
-        from app.services.knowledge_product_service import KnowledgeProductService
-        from app.services.knowledge_reply_service import (
-            extract_product_reference,
-            filter_banned_words,
-            generate_knowledge_reply,
-        )
-
-        if not moderator.has_config(nick_live_id):
-            logger.warning(f"Knowledge reply enabled but moderator not configured for nick_live={nick_live_id}")
-            return
-
-        kp_svc = KnowledgeProductService(db)
-        products = kp_svc.get_products(nick_live_id)
-        if not products:
-            logger.warning(f"Knowledge reply enabled but no products for nick_live={nick_live_id}")
-            return
-
-        api_key = svc.get_openai_api_key()
-        if not api_key:
-            logger.warning("Knowledge reply enabled but OpenAI API key not set")
-            return
-
-        model = svc.get_knowledge_model() or svc.get_setting("openai_model") or "gpt-4o"
-        banned_words = svc.get_banned_words()
-        system_prompt = svc.get_knowledge_system_prompt() or svc.get_system_prompt() or None
-
-        # Build keyword index: product_order -> keywords list
-        keyword_index: dict[int, list[str]] = {}
-        for p in products:
-            try:
-                keyword_index[p.product_order] = json.loads(p.keywords)
-            except (json.JSONDecodeError, TypeError):
-                keyword_index[p.product_order] = []
-
-        for c in comments:
-            content = c.get("content") or c.get("text") or ""
-            if not content:
-                continue
-
-            username = (
-                c.get("username")
-                or c.get("userName")
-                or c.get("nick_name")
-                or c.get("nickname")
-                or "Unknown"
-            )
-            user_id = c.get("streamerId") or c.get("userId") or 0
-
-            # Step 1: Extract product reference
-            product_order = extract_product_reference(content, keyword_index)
-
-            # Step 2: Query product data
-            product_context = None
-            if product_order is not None:
-                product = kp_svc.find_product_by_order(nick_live_id, product_order)
-                if product:
-                    product_context = {
-                        "product_order": product.product_order,
-                        "name": product.name,
-                        "price_min": product.price_min,
-                        "price_max": product.price_max,
-                        "discount_pct": product.discount_pct,
-                        "in_stock": product.in_stock,
-                        "stock_qty": product.stock_qty,
-                        "sold": product.sold,
-                        "rating": product.rating,
-                        "rating_count": product.rating_count,
-                        "voucher_info": product.voucher_info,
-                        "promotion_info": product.promotion_info,
-                    }
-
-            # Step 3: LLM classify + generate
-            reply_text = await generate_knowledge_reply(
-                api_key=api_key,
-                model=model,
-                comment_text=content,
-                guest_name=username,
-                product_context=product_context,
-                system_prompt_override=system_prompt,
-            )
-
-            if reply_text:
-                # Step 4: Banned words filter
-                reply_text = filter_banned_words(reply_text, banned_words)
-
-                result = await moderator.send_reply(
-                    nick_live_id, session_id, username, user_id, reply_text
-                )
-                logger.info(
-                    f"Knowledge reply to {username}: {reply_text[:50]}... -> {result.get('success')}"
-                )
-
-            await asyncio.sleep(1)
+            logger.info(f"Cancelled scanner for nick_live={nick_live_id}")
+            raise
+        finally:
+            logger.debug(f"Poll loop exiting for nick_live={nick_live_id}")
 
 
 # Singleton instance

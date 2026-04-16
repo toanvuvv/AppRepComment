@@ -1,5 +1,9 @@
 # backend/app/schemas/settings.py
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+ReplyMode = Literal["none", "knowledge", "ai", "template"]
 
 
 class OpenAIConfigUpdate(BaseModel):
@@ -51,23 +55,23 @@ class AutoPostTemplateResponse(BaseModel):
 
 
 class NickLiveSettingsUpdate(BaseModel):
-    ai_reply_enabled: bool | None = None
-    auto_reply_enabled: bool | None = None
+    reply_mode: ReplyMode | None = None
+    reply_to_host: bool | None = None
+    reply_to_moderator: bool | None = None
     auto_post_enabled: bool | None = None
-    knowledge_reply_enabled: bool | None = None
-    host_reply_enabled: bool | None = None
-    host_auto_post_enabled: bool | None = None
+    auto_post_to_host: bool | None = None
+    auto_post_to_moderator: bool | None = None
     host_proxy: str | None = None
 
 
 class NickLiveSettingsResponse(BaseModel):
     nick_live_id: int
-    ai_reply_enabled: bool
-    auto_reply_enabled: bool
+    reply_mode: ReplyMode
+    reply_to_host: bool
+    reply_to_moderator: bool
     auto_post_enabled: bool
-    knowledge_reply_enabled: bool
-    host_reply_enabled: bool
-    host_auto_post_enabled: bool
+    auto_post_to_host: bool
+    auto_post_to_moderator: bool
     model_config = {"from_attributes": True}
 
 

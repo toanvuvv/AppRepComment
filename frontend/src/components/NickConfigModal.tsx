@@ -7,6 +7,7 @@ import {
   InputNumber,
   List,
   Switch,
+  Select,
   Space,
   Typography,
   Tag,
@@ -40,6 +41,8 @@ import {
   type AutoPostTemplate,
   type ReplyTemplate,
   type NickLiveSettings,
+  type NickLiveSettingsUpdate,
+  type ReplyMode,
 } from "../api/hostConfig";
 
 import {
@@ -137,7 +140,7 @@ export default function NickConfigModal({
     setHostLoading(true);
     try {
       if (proxy) {
-        await updateNickSettings(nickLiveId, { proxy } as never);
+        await updateNickSettings(nickLiveId, { host_proxy: proxy });
       }
       const result = await getHostCredentials(nickLiveId);
       setHostStatus(result);
@@ -251,14 +254,17 @@ export default function NickConfigModal({
     [nickLiveId]
   );
 
-  // --- Settings toggle handler ---
-  const handleToggleSetting = useCallback(
-    async (key: keyof NickLiveSettings, value: boolean) => {
+  // --- Settings update handler ---
+  const handleUpdateSettings = useCallback(
+    async (patch: NickLiveSettingsUpdate) => {
       try {
-        const updated = await updateNickSettings(nickLiveId, { [key]: value });
+        const updated = await updateNickSettings(nickLiveId, patch);
         setSettings(updated);
-      } catch {
-        message.error("Failed to update setting");
+        message.success("Đã cập nhật");
+      } catch (err: unknown) {
+        const detail = (err as { response?: { data?: { detail?: string } } })
+          ?.response?.data?.detail;
+        message.error(detail || "Cập nhật thất bại");
       }
     },
     [nickLiveId]
@@ -328,9 +334,31 @@ export default function NickConfigModal({
           <Space align="center">
             <Text strong>Auto-post enabled:</Text>
             <Switch
-              checked={settings?.host_auto_post_enabled ?? false}
-              onChange={(val) => handleToggleSetting("host_auto_post_enabled", val)}
+              checked={settings?.auto_post_enabled ?? false}
+              onChange={(val) => handleUpdateSettings({ auto_post_enabled: val })}
             />
+          </Space>
+          <Space align="center">
+            <Text>Gửi tới Host:</Text>
+            <Switch
+              checked={settings?.auto_post_to_host ?? false}
+              disabled={!hostStatus?.configured}
+              onChange={(val) => handleUpdateSettings({ auto_post_to_host: val })}
+            />
+            {!hostStatus?.configured && (
+              <Tag color="default">Chưa có host config</Tag>
+            )}
+          </Space>
+          <Space align="center">
+            <Text>Gửi tới Moderator:</Text>
+            <Switch
+              checked={settings?.auto_post_to_moderator ?? false}
+              disabled={!modStatus?.configured}
+              onChange={(val) => handleUpdateSettings({ auto_post_to_moderator: val })}
+            />
+            {!modStatus?.configured && (
+              <Tag color="default">Chưa có moderator config</Tag>
+            )}
           </Space>
 
           <Space>
@@ -444,32 +472,41 @@ export default function NickConfigModal({
         <Space direction="vertical" style={{ width: "100%" }} size="middle">
           <Space direction="vertical" style={{ width: "100%" }}>
             <Space align="center">
-              <Text strong>Auto reply:</Text>
-              <Switch
-                checked={settings?.auto_reply_enabled ?? false}
-                onChange={(val) => handleToggleSetting("auto_reply_enabled", val)}
+              <Text strong>Chế độ reply:</Text>
+              <Select<ReplyMode>
+                style={{ width: 220 }}
+                value={settings?.reply_mode ?? "none"}
+                onChange={(val) => handleUpdateSettings({ reply_mode: val })}
+                options={[
+                  { value: "none", label: "None (tắt)" },
+                  { value: "knowledge", label: "Knowledge AI" },
+                  { value: "ai", label: "AI thường" },
+                  { value: "template", label: "Template" },
+                ]}
               />
             </Space>
+            <Text type="secondary">Kênh gửi reply:</Text>
             <Space align="center">
-              <Text strong>Host reply:</Text>
+              <Text>Host channel:</Text>
               <Switch
-                checked={settings?.host_reply_enabled ?? false}
-                onChange={(val) => handleToggleSetting("host_reply_enabled", val)}
+                checked={settings?.reply_to_host ?? false}
+                disabled={!hostStatus?.configured}
+                onChange={(val) => handleUpdateSettings({ reply_to_host: val })}
               />
+              {!hostStatus?.configured && (
+                <Tag color="default">Chưa có host config</Tag>
+              )}
             </Space>
             <Space align="center">
-              <Text strong>AI reply:</Text>
+              <Text>Moderator channel:</Text>
               <Switch
-                checked={settings?.ai_reply_enabled ?? false}
-                onChange={(val) => handleToggleSetting("ai_reply_enabled", val)}
+                checked={settings?.reply_to_moderator ?? false}
+                disabled={!modStatus?.configured}
+                onChange={(val) => handleUpdateSettings({ reply_to_moderator: val })}
               />
-            </Space>
-            <Space align="center">
-              <Text strong>Knowledge reply:</Text>
-              <Switch
-                checked={settings?.knowledge_reply_enabled ?? false}
-                onChange={(val) => handleToggleSetting("knowledge_reply_enabled", val)}
-              />
+              {!modStatus?.configured && (
+                <Tag color="default">Chưa có moderator config</Tag>
+              )}
             </Space>
           </Space>
 

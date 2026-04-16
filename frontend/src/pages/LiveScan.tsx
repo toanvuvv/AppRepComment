@@ -16,6 +16,7 @@ import {
   message,
   Divider,
   Switch,
+  Select,
   Modal,
 } from "antd";
 import {
@@ -52,6 +53,8 @@ import {
 } from "../api/nickLive";
 import {
   type NickLiveSettings,
+  type NickLiveSettingsUpdate,
+  type ReplyMode,
   getNickLiveSettings,
   updateNickLiveSettings,
 } from "../api/settings";
@@ -82,6 +85,13 @@ const OUTCOME_COLOR: Record<ReplyOutcome, string> = {
   dropped: "orange",
   circuit_open: "volcano",
   no_config: "default",
+};
+
+const REPLY_MODE_LABEL: Record<ReplyMode, string> = {
+  none: "None",
+  knowledge: "Knowledge AI",
+  ai: "AI thường",
+  template: "Template",
 };
 
 const OUTCOME_LABEL: Record<ReplyOutcome, string> = {
@@ -352,16 +362,18 @@ function LiveScan() {
     }
   }, [selectedId, loadModStatus, loadNickSettings]);
 
-  const handleToggleSetting = useCallback(
-    async (field: "ai_reply_enabled" | "auto_reply_enabled" | "auto_post_enabled" | "knowledge_reply_enabled", value: boolean) => {
+  const handleUpdateNickSettings = useCallback(
+    async (patch: NickLiveSettingsUpdate) => {
       if (!selectedId) return;
       setSettingsLoading(true);
       try {
-        const updated = await updateNickLiveSettings(selectedId, { [field]: value });
+        const updated = await updateNickLiveSettings(selectedId, patch);
         setNickSettings(updated);
-        message.success(value ? "Đã bật" : "Đã tắt");
-      } catch {
-        message.error("Cập nhật thất bại");
+        message.success("Đã cập nhật");
+      } catch (err: unknown) {
+        const detail = (err as { response?: { data?: { detail?: string } } })
+          ?.response?.data?.detail;
+        message.error(detail || "Cập nhật thất bại");
       } finally {
         setSettingsLoading(false);
       }
@@ -784,15 +796,21 @@ function LiveScan() {
               {/* Automation Settings Card */}
               {modStatus?.configured && (
                 <Card title="Cài đặt tự động" style={{ marginBottom: 16 }}>
-                  <Space direction="vertical" style={{ width: "100%" }}>
-                    <Space>
-                      <Switch
-                        checked={nickSettings?.ai_reply_enabled ?? false}
-                        onChange={(v) => handleToggleSetting("ai_reply_enabled", v)}
+                  <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                    <Space align="center">
+                      <Text strong>Chế độ reply:</Text>
+                      <Select<ReplyMode>
+                        style={{ width: 220 }}
+                        value={nickSettings?.reply_mode ?? "none"}
+                        onChange={(v) => handleUpdateNickSettings({ reply_mode: v })}
                         loading={settingsLoading}
-                        disabled={!isScanning}
+                        options={[
+                          { value: "none", label: "None (tắt)" },
+                          { value: "knowledge", label: "Knowledge AI" },
+                          { value: "ai", label: "AI thường" },
+                          { value: "template", label: "Template" },
+                        ]}
                       />
-                      <span>Bật AI Reply</span>
                       {!isScanning && (
                         <Tag icon={<InfoCircleOutlined />} color="warning">
                           Cần đang quét
@@ -800,50 +818,66 @@ function LiveScan() {
                       )}
                     </Space>
                     <Space>
+                      <Text>Reply qua Host:</Text>
                       <Switch
-                        checked={nickSettings?.knowledge_reply_enabled ?? false}
-                        onChange={(v) => handleToggleSetting("knowledge_reply_enabled", v)}
+                        checked={nickSettings?.reply_to_host ?? false}
+                        onChange={(v) => handleUpdateNickSettings({ reply_to_host: v })}
                         loading={settingsLoading}
-                        disabled={!isScanning}
                       />
-                      <span>Bật Knowledge Reply (AI + dữ liệu sản phẩm)</span>
-                      {!isScanning && (
-                        <Tag icon={<InfoCircleOutlined />} color="warning">
-                          Cần đang quét
-                        </Tag>
-                      )}
+                      <Text>Reply qua Moderator:</Text>
+                      <Switch
+                        checked={nickSettings?.reply_to_moderator ?? false}
+                        onChange={(v) => handleUpdateNickSettings({ reply_to_moderator: v })}
+                        loading={settingsLoading}
+                      />
                     </Space>
+
                     <Divider style={{ margin: "8px 0" }} />
-                    <Space>
-                      <Switch
-                        checked={nickSettings?.auto_reply_enabled ?? false}
-                        onChange={(v) => handleToggleSetting("auto_reply_enabled", v)}
-                        loading={settingsLoading}
-                        disabled={!isScanning}
-                      />
-                      <span>Bật Auto-reply (tự động reply comment mới)</span>
-                    </Space>
+
                     <Space>
                       <Switch
                         checked={nickSettings?.auto_post_enabled ?? false}
-                        onChange={(v) => handleToggleSetting("auto_post_enabled", v)}
+                        onChange={(v) => handleUpdateNickSettings({ auto_post_enabled: v })}
                         loading={settingsLoading}
-                        disabled={!isScanning}
                       />
-                      <span>Bật Auto-post (đăng comment theo lịch)</span>
+                      <Text strong>Bật Auto-post (đăng comment theo lịch)</Text>
+                    </Space>
+                    <Space>
+                      <Text>Auto-post qua Host:</Text>
+                      <Switch
+                        checked={nickSettings?.auto_post_to_host ?? false}
+                        onChange={(v) => handleUpdateNickSettings({ auto_post_to_host: v })}
+                        loading={settingsLoading}
+                      />
+                      <Text>Auto-post qua Moderator:</Text>
+                      <Switch
+                        checked={nickSettings?.auto_post_to_moderator ?? false}
+                        onChange={(v) => handleUpdateNickSettings({ auto_post_to_moderator: v })}
+                        loading={settingsLoading}
+                      />
                     </Space>
 
-                    {nickSettings?.knowledge_reply_enabled && (
-                      <Tag color="gold">Đang reply bằng Knowledge AI (sản phẩm)</Tag>
-                    )}
-                    {nickSettings?.ai_reply_enabled && !nickSettings?.knowledge_reply_enabled && (
-                      <Tag color="purple">Đang reply bằng AI</Tag>
-                    )}
-                    {nickSettings?.auto_reply_enabled && !nickSettings?.ai_reply_enabled && !nickSettings?.knowledge_reply_enabled && (
-                      <Tag color="blue">Đang reply bằng template ngẫu nhiên</Tag>
+                    {nickSettings && nickSettings.reply_mode !== "none" && (
+                      <Tag color="gold">
+                        Reply: {REPLY_MODE_LABEL[nickSettings.reply_mode]} →{" "}
+                        {[
+                          nickSettings.reply_to_host ? "Host" : null,
+                          nickSettings.reply_to_moderator ? "Moderator" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" + ") || "chưa chọn kênh"}
+                      </Tag>
                     )}
                     {nickSettings?.auto_post_enabled && (
-                      <Tag color="green">Đang đăng comment theo lịch</Tag>
+                      <Tag color="green">
+                        Auto-post →{" "}
+                        {[
+                          nickSettings.auto_post_to_host ? "Host" : null,
+                          nickSettings.auto_post_to_moderator ? "Moderator" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" + ") || "chưa chọn kênh"}
+                      </Tag>
                     )}
                   </Space>
                 </Card>

@@ -11,6 +11,7 @@ from app.schemas.settings import (
     KnowledgeProductResponse,
 )
 from app.services.knowledge_product_service import KnowledgeProductService
+from app.services.nick_cache import nick_cache
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ def import_products(
             nick_live_id=nick_live_id,
             raw_json=payload.raw_json,
         )
+        nick_cache.invalidate_products(nick_live_id)
         return products
     except Exception as e:
         logger.error(f"Import failed for nick_live={nick_live_id}: {e}")
@@ -58,4 +60,5 @@ def delete_all_products(
     """Delete all knowledge products for this nick_live."""
     kp_svc = KnowledgeProductService(db)
     count = kp_svc.delete_products(nick_live_id)
+    nick_cache.invalidate_products(nick_live_id)
     return {"deleted": count}

@@ -24,9 +24,8 @@ async def get_host_credentials(
         "apikey": api_key,
         "cookie": cookies,
         "country": "vn",
+        "proxy": proxy or "",
     }
-    if proxy:
-        payload["proxy"] = proxy
 
     client = get_client()
     try:
@@ -47,7 +46,9 @@ async def get_host_credentials(
     root = data.get("data") or data
     uuid_val = root.get("uuid")
     usersig = None
-    preview_config = root.get("preview_config")
+    # preview_config may be nested: data.data.preview_config or data.preview_config
+    inner = root.get("data") if isinstance(root.get("data"), dict) else root
+    preview_config = inner.get("preview_config")
     if isinstance(preview_config, dict):
         usersig = preview_config.get("usersig")
 

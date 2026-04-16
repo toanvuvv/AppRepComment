@@ -225,14 +225,14 @@ class ShopeeLiveModerator:
             self._persist_to_db(nick_live_id, None)
         return removed
 
-    def generate_reply_body(
+    def generate_moderator_reply_body(
         self,
         nick_live_id: int,
         guest_name: str,
         guest_id: int,
         reply_text: str,
     ) -> dict[str, Any] | None:
-        """Build the request body for replying to a guest comment."""
+        """Build the request body for moderator-channel reply (type 102) with @mention."""
         config = self._configs.get(nick_live_id)
         if not config:
             return None
@@ -267,6 +267,22 @@ class ShopeeLiveModerator:
             "uuid": config["uuid"],
         }
 
+    def generate_moderator_post_body(
+        self, nick_live_id: int, content: str
+    ) -> dict[str, Any] | None:
+        """Build moderator-channel plain post body (type 102, no placeholders)."""
+        config = self._configs.get(nick_live_id)
+        if not config:
+            return None
+
+        inner_content = {"type": 102, "content": content}
+        return {
+            "content": json.dumps(inner_content, ensure_ascii=False),
+            "send_ts": int(time.time() * 1000),
+            "usersig": config["usersig"],
+            "uuid": config["uuid"],
+        }
+
     async def send_reply(
         self,
         nick_live_id: int,
@@ -286,7 +302,7 @@ class ShopeeLiveModerator:
         if not config:
             return {"success": False, "error": "Moderator not configured"}
 
-        body = self.generate_reply_body(nick_live_id, guest_name, guest_id, reply_text)
+        body = self.generate_moderator_reply_body(nick_live_id, guest_name, guest_id, reply_text)
         if not body:
             return {"success": False, "error": "Failed to generate reply body"}
 
@@ -395,16 +411,10 @@ class ShopeeLiveModerator:
         return results
 
     def generate_host_post_body(
-        self, nick_live_id: int, content: str, *, use_host: bool = True
+        self, nick_live_id: int, content: str
     ) -> dict[str, Any] | None:
-        """Build type-101 (self-comment) body.
-        use_host=True -> host_config credentials
-        use_host=False -> moderator_config credentials
-        """
-        if use_host:
-            config = self._host_configs.get(nick_live_id)
-        else:
-            config = self._configs.get(nick_live_id)
+        """Build type-101 host-channel post body. Uses host_config credentials."""
+        config = self._host_configs.get(nick_live_id)
         if not config:
             return None
 
@@ -418,35 +428,19 @@ class ShopeeLiveModerator:
         }
 
     def generate_host_reply_body(
-        self, nick_live_id: int, guest_name: str, guest_id: int, reply_text: str,
+        self, nick_live_id: int, guest_name: str, guest_id: int | str, reply_text: str,
     ) -> dict[str, Any] | None:
+        """Build type-101 host reply body. Host channel always uses type 101."""
         config = self._host_configs.get(nick_live_id)
         if not config:
             return None
-        placeholder = re.sub(
-            r"[^A-Z0-9]", "", guest_name.upper()[:8] + str(int(time.time()))
-        )[-10:]
-        inner_content = {
-            "content": f"@{guest_name} {reply_text}",
-            "content_v2": f"#{placeholder}# {reply_text}",
-            "extra_info": {
-                "feedback_transparent": "",
-                "place_holders": [
-                    {
-                        "key": f"#{placeholder}#",
-                        "type": 1,
-                        "user_id": guest_id,
-                        "value": guest_name,
-                    }
-                ],
-            },
-            "type": 102,
-        }
+        inner_content = {"type": 101, "content": f"@{guest_name} {reply_text}"}
         return {
             "content": json.dumps(inner_content, ensure_ascii=False),
             "send_ts": int(time.time() * 1000),
             "usersig": config["usersig"],
             "uuid": config["uuid"],
+            "pin": False,
         }
 
     async def send_host_message(
@@ -457,6 +451,8 @@ class ShopeeLiveModerator:
         headers["cookie"] = cookies
         url = f"https://{_REQUIRED_HOST}/api/v1/session/{live_session_id}/message"
 
+        print(f"[HOST-DEBUG] url={url}")
+        print(f"[HOST-DEBUG] body={json.dumps(body, ensure_ascii=False)[:2000]}")
         attempts = 0
         max_attempts = 2
         while attempts < max_attempts:
@@ -485,9 +481,10 @@ class ShopeeLiveModerator:
                 return {"success": False, "error": "request_failed"}
         return {"success": False, "error": "rate_limited"}
 
-    async def send_reply_raw(
+    async def send_moderator_message(
         self, nick_live_id: int, live_session_id: int, body: dict[str, Any],
     ) -> dict[str, Any]:
+        """Send a pre-built body via moderator credentials."""
         config = self._configs.get(nick_live_id)
         if not config:
             return {"success": False, "error": "Moderator not configured"}
@@ -514,7 +511,7 @@ class ShopeeLiveModerator:
                         pass
                 return {"success": is_success, "status_code": status}
             except Exception as e:
-                logger.error(f"send_reply_raw error: {e}")
+                logger.error(f"send_moderator_message error: {e}")
                 return {"success": False, "error": "request_failed"}
         return {"success": False, "error": "rate_limited"}
 

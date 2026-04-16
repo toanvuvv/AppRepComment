@@ -57,6 +57,31 @@ def _migrate_add_columns() -> None:
             "moderator_config",
             "ALTER TABLE nick_live_settings ADD COLUMN moderator_config TEXT",
         ),
+        (
+            "nick_live_settings",
+            "reply_mode",
+            "ALTER TABLE nick_live_settings ADD COLUMN reply_mode VARCHAR(20) NOT NULL DEFAULT 'none'",
+        ),
+        (
+            "nick_live_settings",
+            "reply_to_host",
+            "ALTER TABLE nick_live_settings ADD COLUMN reply_to_host BOOLEAN NOT NULL DEFAULT 0",
+        ),
+        (
+            "nick_live_settings",
+            "reply_to_moderator",
+            "ALTER TABLE nick_live_settings ADD COLUMN reply_to_moderator BOOLEAN NOT NULL DEFAULT 0",
+        ),
+        (
+            "nick_live_settings",
+            "auto_post_to_host",
+            "ALTER TABLE nick_live_settings ADD COLUMN auto_post_to_host BOOLEAN NOT NULL DEFAULT 0",
+        ),
+        (
+            "nick_live_settings",
+            "auto_post_to_moderator",
+            "ALTER TABLE nick_live_settings ADD COLUMN auto_post_to_moderator BOOLEAN NOT NULL DEFAULT 0",
+        ),
     ]
 
     for table, column, sql in migrations:
@@ -68,6 +93,49 @@ def _migrate_add_columns() -> None:
                 conn.commit()
             except sqlite3.OperationalError:
                 pass
+
+    # --- Data migration: map old *_enabled columns to new schema ---
+    # Old columns may or may not exist; check each before running UPDATE.
+    data_migrations: list[tuple[str, str]] = [
+        (
+            "knowledge_reply_enabled",
+            "UPDATE nick_live_settings SET reply_mode = 'knowledge' WHERE knowledge_reply_enabled = 1",
+        ),
+        (
+            "ai_reply_enabled",
+            "UPDATE nick_live_settings SET reply_mode = 'ai' "
+            "WHERE ai_reply_enabled = 1 AND "
+            "(knowledge_reply_enabled IS NULL OR knowledge_reply_enabled = 0)",
+        ),
+        (
+            "auto_reply_enabled",
+            "UPDATE nick_live_settings SET reply_to_moderator = 1 WHERE auto_reply_enabled = 1",
+        ),
+        (
+            "host_reply_enabled",
+            "UPDATE nick_live_settings SET reply_to_host = 1 WHERE host_reply_enabled = 1",
+        ),
+        (
+            "auto_post_enabled",
+            "UPDATE nick_live_settings SET auto_post_to_moderator = 1 WHERE auto_post_enabled = 1",
+        ),
+        (
+            "host_auto_post_enabled",
+            "UPDATE nick_live_settings SET auto_post_to_host = 1 WHERE host_auto_post_enabled = 1",
+        ),
+    ]
+
+    for probe_column, update_sql in data_migrations:
+        try:
+            cursor.execute(f"SELECT {probe_column} FROM nick_live_settings LIMIT 1")
+        except sqlite3.OperationalError:
+            # Old column does not exist — skip.
+            continue
+        try:
+            cursor.execute(update_sql)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
     conn.close()
 

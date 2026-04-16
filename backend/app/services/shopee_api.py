@@ -1,4 +1,21 @@
+"""Shopee Creator API calls.
+
+Uses the shared httpx AsyncClient and the global token-bucket rate limiter.
+Maps upstream HTTP status codes onto our domain exception hierarchy so
+callers (poll loop, reply dispatcher) can react appropriately without
+parsing httpx errors themselves.
+"""
+from __future__ import annotations
+
 import httpx
+
+from app.services.exceptions import (
+    ShopeeAuthError,
+    ShopeeRateLimitError,
+    ShopeeServerError,
+)
+from app.services.http_client import get_client
+from app.services.rate_limiter import shopee_limiter
 
 SHOPEE_HEADERS = {
     "accept": "application/json",
@@ -24,37 +41,63 @@ SHOPEE_HEADERS = {
 }
 
 
+def _raise_for_shopee(resp: httpx.Response, endpoint: str) -> None:
+    """Map upstream status codes onto our exception hierarchy."""
+    status = resp.status_code
+    if 200 <= status < 300:
+        return
+    if status in (401, 403):
+        raise ShopeeAuthError(
+            f"{endpoint}: auth rejected (status={status})"
+        )
+    if status == 429:
+        raise ShopeeRateLimitError(
+            f"{endpoint}: rate limited (status={status})"
+        )
+    if 500 <= status < 600:
+        raise ShopeeServerError(
+            f"{endpoint}: upstream server error (status={status})"
+        )
+    # Other 4xx — surface the httpx error so callers can see details.
+    resp.raise_for_status()
+
+
 async def get_live_sessions(cookies: str) -> dict:
-    """Fetch session list from Shopee Creator API"""
+    """Fetch session list from Shopee Creator API."""
     url = (
         "https://creator.shopee.vn/supply/api/lm/sellercenter/realtime/sessionList"
         "?page=1&pageSize=10&name=&orderBy=&sort="
     )
     headers = {**SHOPEE_HEADERS, "cookie": cookies}
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(url, headers=headers, timeout=15.0)
-        resp.raise_for_status()
-        return resp.json()
+
+    await shopee_limiter.acquire()
+    client = get_client()
+    resp = await client.get(url, headers=headers)
+    _raise_for_shopee(resp, "get_live_sessions")
+    return resp.json()
 
 
 async def get_comments(cookies: str, session_id: int, start_timestamp: int) -> list:
-    """Fetch comments from a live session"""
+    """Fetch comments from a live session."""
     url = (
         "https://creator.shopee.vn/supply/api/lm/sellercenter/realtime/"
         f"dashboard/livestream/comments?sessionId={session_id}"
         f"&startTimestamp={start_timestamp}"
     )
     headers = {**SHOPEE_HEADERS, "cookie": cookies}
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(url, headers=headers, timeout=15.0)
-        resp.raise_for_status()
-        data = resp.json()
-        items = (
-            data.get("data", {}).get("comments")
-            or data.get("data", {}).get("list")
-            or data.get("data")
-            or []
-        )
-        if not isinstance(items, list):
-            items = []
-        return items
+
+    await shopee_limiter.acquire()
+    client = get_client()
+    resp = await client.get(url, headers=headers)
+    _raise_for_shopee(resp, "get_comments")
+
+    data = resp.json()
+    items = (
+        data.get("data", {}).get("comments")
+        or data.get("data", {}).get("list")
+        or data.get("data")
+        or []
+    )
+    if not isinstance(items, list):
+        items = []
+    return items

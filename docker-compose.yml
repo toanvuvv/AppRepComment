@@ -1,0 +1,52 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: app-rep-comment-backend:latest
+    container_name: arc-backend
+    restart: unless-stopped
+    environment:
+      ENV: production
+      APP_API_KEY: ${APP_API_KEY:?APP_API_KEY must be set in .env}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      COOKIE_ENCRYPTION_KEY: ${COOKIE_ENCRYPTION_KEY:-}
+      DATABASE_URL: sqlite:////app/data/database.db
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+    volumes:
+      # Persist SQLite DB + WAL files across container rebuilds
+      - backend-data:/app/data
+    expose:
+      - "8000"
+    # Uncomment to expose the API directly on the host (bypassing nginx):
+    # ports:
+    #   - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_API_KEY: ${APP_API_KEY:?APP_API_KEY must be set in .env}
+    image: app-rep-comment-frontend:latest
+    container_name: arc-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+
+volumes:
+  backend-data:
+    name: arc-backend-data

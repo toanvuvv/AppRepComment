@@ -194,38 +194,76 @@ class SettingsService:
     def update_nick_settings(
         self,
         nick_live_id: int,
-        ai_reply_enabled: bool | None = None,
-        auto_reply_enabled: bool | None = None,
+        *,
+        reply_mode: str | None = None,
+        reply_to_host: bool | None = None,
+        reply_to_moderator: bool | None = None,
         auto_post_enabled: bool | None = None,
-        knowledge_reply_enabled: bool | None = None,
-        host_reply_enabled: bool | None = None,
-        host_auto_post_enabled: bool | None = None,
+        auto_post_to_host: bool | None = None,
+        auto_post_to_moderator: bool | None = None,
         host_proxy: str | None = None,
     ) -> NickLiveSetting:
+        # Local imports to avoid cycles.
+        from app.models.knowledge_product import KnowledgeProduct
+
         row = self.get_or_create_nick_settings(nick_live_id)
 
-        # Mutual exclusion: only one of ai_reply / knowledge_reply can be active
-        if knowledge_reply_enabled is True:
-            row.knowledge_reply_enabled = True
-            row.ai_reply_enabled = False
-        elif ai_reply_enabled is True:
-            row.ai_reply_enabled = True
-            row.knowledge_reply_enabled = False
-        else:
-            if ai_reply_enabled is not None:
-                row.ai_reply_enabled = ai_reply_enabled
-            if knowledge_reply_enabled is not None:
-                row.knowledge_reply_enabled = knowledge_reply_enabled
+        # --- Validate reply_mode ---
+        if reply_mode is not None:
+            if reply_mode not in ("none", "knowledge", "ai", "template"):
+                raise ValueError(f"invalid reply_mode: {reply_mode}")
+            if reply_mode == "knowledge":
+                n = (
+                    self._db.query(KnowledgeProduct)
+                    .filter(KnowledgeProduct.nick_live_id == nick_live_id)
+                    .count()
+                )
+                if n == 0:
+                    raise ValueError("Cần import sản phẩm trước khi bật Knowledge AI")
+            elif reply_mode == "template":
+                n = (
+                    self._db.query(ReplyTemplate)
+                    .filter(ReplyTemplate.nick_live_id == nick_live_id)
+                    .count()
+                )
+                if n == 0:
+                    raise ValueError("Cần tạo template reply trước khi bật chế độ Template")
+            elif reply_mode == "ai":
+                if not self.get_openai_api_key():
+                    raise ValueError("Cần cấu hình OpenAI API key trước")
+            row.reply_mode = reply_mode
 
-        if auto_reply_enabled is not None:
-            row.auto_reply_enabled = auto_reply_enabled
+        # --- Validate channel toggles (only when turning ON) ---
+        if reply_to_host is True and not row.host_config:
+            raise ValueError("Cần Get Credentials cho host trước khi bật Reply Host")
+        if reply_to_moderator is True and not row.moderator_config:
+            raise ValueError("Cần cấu hình cURL moderator trước khi bật Reply Moderator")
+        if auto_post_to_host is True and not row.host_config:
+            raise ValueError("Cần Get Credentials cho host trước khi bật Auto Post Host")
+        if auto_post_to_moderator is True and not row.moderator_config:
+            raise ValueError("Cần cấu hình cURL moderator trước khi bật Auto Post Moderator")
+
+        # --- Validate auto_post_enabled ---
+        if auto_post_enabled is True:
+            n = (
+                self._db.query(AutoPostTemplate)
+                .filter(AutoPostTemplate.nick_live_id == nick_live_id)
+                .count()
+            )
+            if n == 0:
+                raise ValueError("Cần tạo template auto-post trước khi bật")
+
+        # --- Apply updates ---
+        if reply_to_host is not None:
+            row.reply_to_host = reply_to_host
+        if reply_to_moderator is not None:
+            row.reply_to_moderator = reply_to_moderator
         if auto_post_enabled is not None:
             row.auto_post_enabled = auto_post_enabled
-
-        if host_reply_enabled is not None:
-            row.host_reply_enabled = host_reply_enabled
-        if host_auto_post_enabled is not None:
-            row.host_auto_post_enabled = host_auto_post_enabled
+        if auto_post_to_host is not None:
+            row.auto_post_to_host = auto_post_to_host
+        if auto_post_to_moderator is not None:
+            row.auto_post_to_moderator = auto_post_to_moderator
         if host_proxy is not None:
             row.host_proxy = host_proxy
 

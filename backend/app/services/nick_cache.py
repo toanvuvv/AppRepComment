@@ -23,13 +23,14 @@ logger = logging.getLogger(__name__)
 class NickSettingsSnapshot:
     """Immutable snapshot of the per-nick settings needed by the reply pipeline."""
 
-    ai_reply_enabled: bool
-    knowledge_reply_enabled: bool
-    auto_reply_enabled: bool
+    reply_mode: str  # "none" | "knowledge" | "ai" | "template"
+    reply_to_host: bool
+    reply_to_moderator: bool
     auto_post_enabled: bool
-    host_reply_enabled: bool
-    host_auto_post_enabled: bool
+    auto_post_to_host: bool
+    auto_post_to_moderator: bool
     host_config: dict | None
+    moderator_config: dict | None
     openai_api_key: str | None
     openai_model: str | None
     system_prompt: str
@@ -153,14 +154,29 @@ class NickRuntimeCache:
             svc = SettingsService(db)
             row = svc.get_or_create_nick_settings(nick_live_id)
 
+            host_config_dict: dict | None = None
+            if row.host_config:
+                try:
+                    host_config_dict = json.loads(row.host_config)
+                except (json.JSONDecodeError, TypeError):
+                    host_config_dict = None
+
+            moderator_config_dict: dict | None = None
+            if row.moderator_config:
+                try:
+                    moderator_config_dict = json.loads(row.moderator_config)
+                except (json.JSONDecodeError, TypeError):
+                    moderator_config_dict = None
+
             snapshot = NickSettingsSnapshot(
-                ai_reply_enabled=bool(row.ai_reply_enabled),
-                knowledge_reply_enabled=bool(row.knowledge_reply_enabled),
-                auto_reply_enabled=bool(row.auto_reply_enabled),
+                reply_mode=str(getattr(row, "reply_mode", "none") or "none"),
+                reply_to_host=bool(getattr(row, "reply_to_host", False)),
+                reply_to_moderator=bool(getattr(row, "reply_to_moderator", False)),
                 auto_post_enabled=bool(row.auto_post_enabled),
-                host_reply_enabled=bool(row.host_reply_enabled),
-                host_auto_post_enabled=bool(row.host_auto_post_enabled),
-                host_config=json.loads(row.host_config) if row.host_config else None,
+                auto_post_to_host=bool(getattr(row, "auto_post_to_host", False)),
+                auto_post_to_moderator=bool(getattr(row, "auto_post_to_moderator", False)),
+                host_config=host_config_dict,
+                moderator_config=moderator_config_dict,
                 openai_api_key=svc.get_openai_api_key(),
                 openai_model=svc.get_setting("openai_model"),
                 system_prompt=svc.get_system_prompt() or "",

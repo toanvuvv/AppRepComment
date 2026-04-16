@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 
 from app.config import REPLY_CONCURRENCY, REPLY_QUEUE_MAX, REPLY_WORKER_COUNT
@@ -174,6 +175,7 @@ class ReplyDispatcher:
         )
         from app.services.live_moderator import moderator
         from app.services.nick_cache import nick_cache
+        from app.services.settings_service import SettingsService
 
         t0 = time.monotonic()
 
@@ -199,18 +201,21 @@ class ReplyDispatcher:
             "comment_text": content,
         }
 
-        # --- check moderator / host config -----------------------------------
-        has_mod = moderator.has_config(nick_live_id)
-        has_host = moderator.has_host_config(nick_live_id)
-
         settings = await nick_cache.get_settings(nick_live_id, SessionLocal)
 
-        has_mod = has_mod and settings.auto_reply_enabled
-        has_host = has_host and settings.host_reply_enabled
+        # --- Skip if nothing to do ---
+        if settings.reply_mode == "none":
+            return
+        if not settings.reply_to_host and not settings.reply_to_moderator:
+            return
+
+        mode = settings.reply_mode
+        has_mod = settings.reply_to_moderator and moderator.has_config(nick_live_id)
+        has_host = settings.reply_to_host and moderator.has_host_config(nick_live_id)
 
         if not has_mod and not has_host:
             logger.warning(
-                f"Reply path: neither moderator nor host configured for "
+                f"Reply path: enabled channel(s) have no credentials for "
                 f"nick={nick_live_id}"
             )
             await reply_log_writer.log({
@@ -223,193 +228,223 @@ class ReplyDispatcher:
             })
             return
 
-        if not settings.openai_api_key:
-            logger.warning("openai_api_key missing")
-            await reply_log_writer.log({
-                **base_log,
-                "reply_text": None,
-                "reply_type": None,
-                "outcome": "failed",
-                "error": "openai_api_key missing",
-                "latency_ms": int((time.monotonic() - t0) * 1000),
-            })
-            return
-
-        # --- decide reply type ---------------------------------------------
-        reply_type: str | None
+        # --- Generate reply text based on mode ---
+        reply_text: str | None = None
         product_order: int | None = None
         product_context: dict | None = None
         system_prompt: str | None = None
         model: str | None = None
+        llm_latency_ms: int = 0
+        cached_hit: bool = False
 
-        if settings.knowledge_reply_enabled:
-            reply_type = "knowledge"
-            products, keyword_index = await nick_cache.get_products(
-                nick_live_id, SessionLocal
-            )
-            if not products:
-                logger.warning(
-                    f"Knowledge reply enabled but no products for "
-                    f"nick={nick_live_id}"
-                )
+        if mode in ("knowledge", "ai"):
+            if not settings.openai_api_key:
+                logger.warning("openai_api_key missing")
                 await reply_log_writer.log({
                     **base_log,
                     "reply_text": None,
-                    "reply_type": reply_type,
+                    "reply_type": mode,
                     "outcome": "failed",
-                    "error": "knowledge_enabled_but_no_products",
+                    "error": "openai_api_key missing",
                     "latency_ms": int((time.monotonic() - t0) * 1000),
                 })
                 return
 
-            model = (
-                settings.knowledge_model
-                or settings.openai_model
-                or "gpt-4o"
-            )
-            product_order = extract_product_reference(content, keyword_index)
-            if product_order is not None:
-                prod = next(
-                    (p for p in products if p.product_order == product_order),
-                    None,
+            if mode == "knowledge":
+                products, keyword_index = await nick_cache.get_products(
+                    nick_live_id, SessionLocal
                 )
-                if prod:
-                    product_context = {
-                        "product_order": prod.product_order,
-                        "name": prod.name,
-                        "price_min": prod.price_min,
-                        "price_max": prod.price_max,
-                        "discount_pct": prod.discount_pct,
-                        "in_stock": prod.in_stock,
-                        "stock_qty": prod.stock_qty,
-                        "sold": prod.sold,
-                        "rating": prod.rating,
-                        "rating_count": prod.rating_count,
-                        "voucher_info": prod.voucher_info,
-                        "promotion_info": prod.promotion_info,
-                    }
-            system_prompt = settings.knowledge_system_prompt or None
-        elif settings.ai_reply_enabled:
-            reply_type = "ai"
-            model = settings.openai_model or "gpt-4o"
-            system_prompt = settings.system_prompt or "Bạn là nhân viên CSKH."
-        else:
-            # No reply enabled — not logged (not interesting).
-            return
-
-        # --- circuit breaker ------------------------------------------------
-        circuit = circuit_registry.for_nick(nick_live_id)
-        if not circuit.can_attempt():
-            logger.warning(f"Circuit open for nick={nick_live_id}, skipping LLM")
-            await reply_log_writer.log({
-                **base_log,
-                "reply_text": None,
-                "reply_type": reply_type,
-                "outcome": "circuit_open",
-                "error": f"Circuit breaker OPEN for nick {nick_live_id}",
-                "product_order": product_order if reply_type == "knowledge" else None,
-                "latency_ms": int((time.monotonic() - t0) * 1000),
-            })
-            return
-
-        # --- cache + LLM ----------------------------------------------------
-        cached = reply_cache.get(nick_live_id, content)
-        if cached is not None:
-            reply_text: str | None = cached
-            cached_hit = True
-            llm_latency_ms = 0
-        else:
-            cached_hit = False
-            t_llm = time.monotonic()
-            try:
-                if reply_type == "knowledge":
-                    reply_text = await generate_knowledge_reply(
-                        api_key=settings.openai_api_key,
-                        model=model,
-                        comment_text=content,
-                        guest_name=username,
-                        product_context=product_context,
-                        system_prompt_override=system_prompt,
+                if not products:
+                    logger.warning(
+                        f"Knowledge mode enabled but no products for "
+                        f"nick={nick_live_id}"
                     )
-                else:
-                    reply_text = await generate_reply(
-                        api_key=settings.openai_api_key,
-                        model=model,
-                        system_prompt=system_prompt,
-                        comment_text=content,
-                        guest_name=username,
+                    await reply_log_writer.log({
+                        **base_log,
+                        "reply_text": None,
+                        "reply_type": mode,
+                        "outcome": "failed",
+                        "error": "knowledge_enabled_but_no_products",
+                        "latency_ms": int((time.monotonic() - t0) * 1000),
+                    })
+                    return
+
+                model = (
+                    settings.knowledge_model
+                    or settings.openai_model
+                    or "gpt-4o"
+                )
+                product_order = extract_product_reference(content, keyword_index)
+                if product_order is not None:
+                    prod = next(
+                        (p for p in products if p.product_order == product_order),
+                        None,
                     )
-            except Exception as e:
-                circuit.record_failure()
-                llm_latency_ms = int((time.monotonic() - t_llm) * 1000)
-                logger.exception(f"LLM error for nick={nick_live_id}")
+                    if prod:
+                        product_context = {
+                            "product_order": prod.product_order,
+                            "name": prod.name,
+                            "price_min": prod.price_min,
+                            "price_max": prod.price_max,
+                            "discount_pct": prod.discount_pct,
+                            "in_stock": prod.in_stock,
+                            "stock_qty": prod.stock_qty,
+                            "sold": prod.sold,
+                            "rating": prod.rating,
+                            "rating_count": prod.rating_count,
+                            "voucher_info": prod.voucher_info,
+                            "promotion_info": prod.promotion_info,
+                        }
+                system_prompt = settings.knowledge_system_prompt or None
+            else:  # ai
+                model = settings.openai_model or "gpt-4o"
+                system_prompt = settings.system_prompt or "Bạn là nhân viên CSKH."
+
+            # --- circuit breaker ---
+            circuit = circuit_registry.for_nick(nick_live_id)
+            if not circuit.can_attempt():
+                logger.warning(f"Circuit open for nick={nick_live_id}, skipping LLM")
                 await reply_log_writer.log({
                     **base_log,
                     "reply_text": None,
-                    "reply_type": reply_type,
+                    "reply_type": mode,
+                    "outcome": "circuit_open",
+                    "error": f"Circuit breaker OPEN for nick {nick_live_id}",
+                    "product_order": product_order if mode == "knowledge" else None,
+                    "latency_ms": int((time.monotonic() - t0) * 1000),
+                })
+                return
+
+            # --- cache + LLM ---
+            cached = reply_cache.get(nick_live_id, content)
+            if cached is not None:
+                reply_text = cached
+                cached_hit = True
+            else:
+                t_llm = time.monotonic()
+                try:
+                    if mode == "knowledge":
+                        reply_text = await generate_knowledge_reply(
+                            api_key=settings.openai_api_key,
+                            model=model,
+                            comment_text=content,
+                            guest_name=username,
+                            product_context=product_context,
+                            system_prompt_override=system_prompt,
+                        )
+                    else:
+                        reply_text = await generate_reply(
+                            api_key=settings.openai_api_key,
+                            model=model,
+                            system_prompt=system_prompt,
+                            comment_text=content,
+                            guest_name=username,
+                        )
+                except Exception as e:
+                    circuit.record_failure()
+                    llm_latency_ms = int((time.monotonic() - t_llm) * 1000)
+                    logger.exception(f"LLM error for nick={nick_live_id}")
+                    await reply_log_writer.log({
+                        **base_log,
+                        "reply_text": None,
+                        "reply_type": mode,
+                        "outcome": "failed",
+                        "error": f"llm_error: {e}"[:500],
+                        "product_order": product_order if mode == "knowledge" else None,
+                        "latency_ms": int((time.monotonic() - t0) * 1000),
+                        "llm_latency_ms": llm_latency_ms,
+                        "cached_hit": False,
+                    })
+                    return
+                llm_latency_ms = int((time.monotonic() - t_llm) * 1000)
+
+                if reply_text:
+                    reply_text = filter_banned_words(
+                        reply_text, list(settings.banned_words)
+                    )
+                    reply_cache.put(nick_live_id, content, reply_text)
+
+            if not reply_text:
+                circuit.record_failure()
+                await reply_log_writer.log({
+                    **base_log,
+                    "reply_text": None,
+                    "reply_type": mode,
                     "outcome": "failed",
-                    "error": f"llm_error: {e}"[:500],
-                    "product_order": product_order if reply_type == "knowledge" else None,
+                    "error": "empty_llm_response",
+                    "product_order": product_order if mode == "knowledge" else None,
                     "latency_ms": int((time.monotonic() - t0) * 1000),
                     "llm_latency_ms": llm_latency_ms,
-                    "cached_hit": False,
+                    "cached_hit": cached_hit,
                 })
                 return
-            llm_latency_ms = int((time.monotonic() - t_llm) * 1000)
 
+        elif mode == "template":
+            # Pick a random per-nick reply template.
+            db = SessionLocal()
+            try:
+                svc = SettingsService(db)
+                templates = svc.get_reply_templates_for_nick(nick_live_id)
+            finally:
+                db.close()
+
+            if not templates:
+                logger.warning(f"Template mode but no templates for nick={nick_live_id}")
+                await reply_log_writer.log({
+                    **base_log,
+                    "reply_text": None,
+                    "reply_type": mode,
+                    "outcome": "failed",
+                    "error": "no_templates",
+                    "latency_ms": int((time.monotonic() - t0) * 1000),
+                })
+                return
+            reply_text = random.choice(templates).content
             if reply_text:
-                # Apply banned-words filter BEFORE caching, so the cache
-                # stores the already-filtered reply.
                 reply_text = filter_banned_words(
                     reply_text, list(settings.banned_words)
                 )
-                reply_cache.put(nick_live_id, content, reply_text)
-
-        if not reply_text:
-            circuit.record_failure()
-            await reply_log_writer.log({
-                **base_log,
-                "reply_text": None,
-                "reply_type": reply_type,
-                "outcome": "failed",
-                "error": "empty_llm_response",
-                "product_order": product_order if reply_type == "knowledge" else None,
-                "latency_ms": int((time.monotonic() - t0) * 1000),
-                "llm_latency_ms": llm_latency_ms,
-                "cached_hit": cached_hit,
-            })
+        else:
+            # Unknown mode — safety net.
             return
 
-        # --- send moderator reply -------------------------------------------
-        if has_mod and reply_text:
-            result = await moderator.send_reply(
-                nick_live_id, session_id, username, user_id, reply_text
+        if not reply_text:
+            return
+
+        # --- Send to enabled channels ---
+        circuit = circuit_registry.for_nick(nick_live_id)
+
+        if has_mod:
+            mod_body = moderator.generate_moderator_reply_body(
+                nick_live_id, username, int(user_id) if user_id else 0, reply_text
             )
-            success = bool(result.get("success"))
-            if success:
-                circuit.record_success()
-            else:
-                circuit.record_failure()
+            if mod_body:
+                result = await moderator.send_moderator_message(
+                    nick_live_id, session_id, mod_body
+                )
+                success = bool(result.get("success"))
+                if mode in ("knowledge", "ai"):
+                    if success:
+                        circuit.record_success()
+                    else:
+                        circuit.record_failure()
+                logger.info(
+                    f"[mod_{mode}] {username}: {reply_text[:50]}... -> {success}"
+                )
+                await reply_log_writer.log({
+                    **base_log,
+                    "reply_text": reply_text,
+                    "reply_type": f"mod_{mode}",
+                    "outcome": "success" if success else "failed",
+                    "status_code": result.get("status_code"),
+                    "error": None if success else result.get("error"),
+                    "product_order": product_order if mode == "knowledge" else None,
+                    "latency_ms": int((time.monotonic() - t0) * 1000),
+                    "llm_latency_ms": llm_latency_ms,
+                    "cached_hit": cached_hit,
+                })
 
-            logger.info(
-                f"[{reply_type}] {username}: {reply_text[:50]}... -> {success}"
-            )
-
-            await reply_log_writer.log({
-                **base_log,
-                "reply_text": reply_text,
-                "reply_type": reply_type,
-                "outcome": "success" if success else "failed",
-                "status_code": result.get("status_code"),
-                "error": None if success else result.get("error"),
-                "product_order": product_order if reply_type == "knowledge" else None,
-                "latency_ms": int((time.monotonic() - t0) * 1000),
-                "llm_latency_ms": llm_latency_ms,
-                "cached_hit": cached_hit,
-            })
-
-        # --- send host reply (independent of moderator) ---------------------
-        if has_host and reply_text:
+        if has_host:
             host_body = moderator.generate_host_reply_body(
                 nick_live_id, username, str(user_id), reply_text
             )
@@ -419,17 +454,17 @@ class ReplyDispatcher:
                 )
                 host_success = bool(host_result.get("success"))
                 logger.info(
-                    f"[host-{reply_type}] {username}: "
+                    f"[host_{mode}] {username}: "
                     f"{reply_text[:50]}... -> {host_success}"
                 )
                 await reply_log_writer.log({
                     **base_log,
                     "reply_text": reply_text,
-                    "reply_type": f"host_{reply_type}" if reply_type else "host",
+                    "reply_type": f"host_{mode}",
                     "outcome": "success" if host_success else "failed",
                     "error": host_result.get("error") if not host_success else None,
                     "status_code": host_result.get("status_code"),
-                    "product_order": product_order if reply_type == "knowledge" else None,
+                    "product_order": product_order if mode == "knowledge" else None,
                     "latency_ms": int((time.monotonic() - t0) * 1000),
                     "llm_latency_ms": llm_latency_ms,
                     "cached_hit": cached_hit,
