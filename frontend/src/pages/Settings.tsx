@@ -1,31 +1,23 @@
 // frontend/src/pages/Settings.tsx
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Button,
   Card,
   Input,
-  InputNumber,
-  List,
   Select,
   Space,
+  Tag,
   Typography,
   message,
 } from "antd";
-import { DeleteOutlined, PlusOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { ThunderboltOutlined } from "@ant-design/icons";
 import {
-  type AutoPostTemplate,
-  type ReplyTemplate,
-  createAutoPostTemplate,
-  createReplyTemplate,
-  deleteAutoPostTemplate,
-  deleteReplyTemplate,
-  getAutoPostTemplates,
   getOpenAIConfig,
-  getReplyTemplates,
+  getReliveApiKey,
   getSystemPrompt,
   testAI,
-  updateAutoPostTemplate,
   updateOpenAIConfig,
+  updateReliveApiKey,
   updateSystemPrompt,
 } from "../api/settings";
 import {
@@ -57,17 +49,10 @@ function Settings() {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [promptLoading, setPromptLoading] = useState(false);
 
-  // Reply templates
-  const [replyTemplates, setReplyTemplates] = useState<ReplyTemplate[]>([]);
-  const [newReplyContent, setNewReplyContent] = useState("");
-  const [replyLoading, setReplyLoading] = useState(false);
-
-  // Auto-post templates
-  const [autoPostTemplates, setAutoPostTemplates] = useState<AutoPostTemplate[]>([]);
-  const [newPostContent, setNewPostContent] = useState("");
-  const [newPostMin, setNewPostMin] = useState(60);
-  const [newPostMax, setNewPostMax] = useState(300);
-  const [postLoading, setPostLoading] = useState(false);
+  // Relive API key
+  const [reliveKey, setReliveKey] = useState("");
+  const [reliveKeySet, setReliveKeySet] = useState(false);
+  const [reliveLoading, setReliveLoading] = useState(false);
 
   // Knowledge AI config
   const [knowledgePrompt, setKnowledgePrompt] = useState("");
@@ -80,25 +65,26 @@ function Settings() {
 
   const loadAll = useCallback(async () => {
     try {
-      const [oai, prompt, replies, posts, banned, kbConfig] = await Promise.all([
+      const [oai, prompt, banned, kbConfig] = await Promise.all([
         getOpenAIConfig(),
         getSystemPrompt(),
-        getReplyTemplates(),
-        getAutoPostTemplates(),
         getBannedWords(),
         getKnowledgeAIConfig(),
       ]);
       setApiKeySet(oai.api_key_set);
       setModel(oai.model || "gpt-4o");
       setSystemPrompt(prompt.prompt);
-      setReplyTemplates(replies);
-      setAutoPostTemplates(posts);
       setBannedWordsText(banned.words.join("\n"));
       setKnowledgePrompt(kbConfig.system_prompt);
       setKnowledgeModel(kbConfig.model || "gpt-4o");
     } catch {
       message.error("Không thể tải cài đặt");
     }
+
+    getReliveApiKey().then((r) => {
+      setReliveKeySet(r.api_key_set);
+      if (r.api_key) setReliveKey(r.api_key);
+    });
   }, []);
 
   useEffect(() => {
@@ -151,83 +137,18 @@ function Settings() {
     }
   };
 
-  const handleAddReplyTemplate = async () => {
-    if (!newReplyContent.trim()) return;
-    setReplyLoading(true);
+  const handleSaveReliveKey = async () => {
+    setReliveLoading(true);
     try {
-      await createReplyTemplate(newReplyContent);
-      setNewReplyContent("");
-      const updated = await getReplyTemplates();
-      setReplyTemplates(updated);
+      await updateReliveApiKey(reliveKey);
+      setReliveKeySet(!!reliveKey);
+      message.success("Relive API key saved");
     } catch {
-      message.error("Thêm thất bại");
+      message.error("Failed to save");
     } finally {
-      setReplyLoading(false);
+      setReliveLoading(false);
     }
   };
-
-  const handleDeleteReplyTemplate = async (id: number) => {
-    try {
-      await deleteReplyTemplate(id);
-      setReplyTemplates((prev) => prev.filter((t) => t.id !== id));
-    } catch {
-      message.error("Xóa thất bại");
-    }
-  };
-
-  const handleAddAutoPost = async () => {
-    if (!newPostContent.trim()) return;
-    if (newPostMin > newPostMax) {
-      message.error("Min phải nhỏ hơn Max");
-      return;
-    }
-    setPostLoading(true);
-    try {
-      await createAutoPostTemplate(newPostContent, newPostMin, newPostMax);
-      setNewPostContent("");
-      setNewPostMin(60);
-      setNewPostMax(300);
-      const updated = await getAutoPostTemplates();
-      setAutoPostTemplates(updated);
-    } catch {
-      message.error("Thêm thất bại");
-    } finally {
-      setPostLoading(false);
-    }
-  };
-
-  const handleDeleteAutoPost = async (id: number) => {
-    try {
-      await deleteAutoPostTemplate(id);
-      setAutoPostTemplates((prev) => prev.filter((t) => t.id !== id));
-    } catch {
-      message.error("Xóa thất bại");
-    }
-  };
-
-  // Debounce timer ref to avoid API call per keystroke
-  const intervalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleUpdateAutoPostInterval = useCallback(
-    (id: number, min_interval_seconds: number, max_interval_seconds: number) => {
-      // Update UI immediately
-      setAutoPostTemplates((prev) =>
-        prev.map((t) =>
-          t.id === id ? { ...t, min_interval_seconds, max_interval_seconds } : t
-        )
-      );
-      // Debounce the API call
-      if (intervalTimerRef.current) clearTimeout(intervalTimerRef.current);
-      intervalTimerRef.current = setTimeout(async () => {
-        try {
-          await updateAutoPostTemplate(id, { min_interval_seconds, max_interval_seconds });
-        } catch {
-          message.error("Cập nhật thất bại");
-        }
-      }, 800);
-    },
-    []
-  );
 
   const handleSaveKnowledgeConfig = async () => {
     setKnowledgeLoading(true);
@@ -305,6 +226,22 @@ function Settings() {
         </Space>
       </Card>
 
+      {/* Relive.vn API Key */}
+      <Card title="Relive.vn API Key" style={{ marginBottom: 16 }}>
+        <Space>
+          <Input.Password
+            placeholder="Relive API key"
+            value={reliveKey}
+            onChange={(e) => setReliveKey(e.target.value)}
+            style={{ width: 400 }}
+          />
+          <Button type="primary" onClick={handleSaveReliveKey} loading={reliveLoading}>
+            Save
+          </Button>
+          {reliveKeySet && <Tag color="green">Set</Tag>}
+        </Space>
+      </Card>
+
       {/* System Prompt */}
       <Card title="System Prompt (Prompt cha cho AI)" style={{ marginBottom: 16 }}>
         <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
@@ -358,139 +295,10 @@ function Settings() {
         </Space>
       </Card>
 
-      {/* Reply Templates */}
-      <Card
-        title="Reply Templates (Non-AI mode)"
-        style={{ marginBottom: 16 }}
-        extra={<Text type="secondary">Chọn ngẫu nhiên khi AI tắt</Text>}
-      >
-        <Space.Compact style={{ width: "100%", marginBottom: 12 }}>
-          <Input
-            placeholder="Thêm câu reply mới (VD: Cảm ơn bạn đã quan tâm!)"
-            value={newReplyContent}
-            onChange={(e) => setNewReplyContent(e.target.value)}
-            onPressEnter={handleAddReplyTemplate}
-          />
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={handleAddReplyTemplate}
-            loading={replyLoading}
-          >
-            Thêm
-          </Button>
-        </Space.Compact>
-        <List
-          dataSource={replyTemplates}
-          locale={{ emptyText: "Chưa có template nào" }}
-          renderItem={(item) => (
-            <List.Item
-              actions={[
-                <Button
-                  key="del"
-                  type="text"
-                  danger
-                  icon={<DeleteOutlined />}
-                  size="small"
-                  onClick={() => handleDeleteReplyTemplate(item.id)}
-                />,
-              ]}
-            >
-              <Text>{item.content}</Text>
-            </List.Item>
-          )}
-        />
-      </Card>
-
-      {/* Auto-post Templates */}
-      <Card
-        title="Auto-post Templates (Đăng comment theo lịch)"
-        style={{ marginBottom: 16 }}
-        extra={<Text type="secondary">Xoay vòng, interval ngẫu nhiên trong khoảng min~max</Text>}
-      >
-        <Space direction="vertical" style={{ width: "100%", marginBottom: 12 }}>
-          <TextArea
-            rows={2}
-            placeholder="Nội dung comment (VD: Mua ngay giảm 50%! 🔥)"
-            value={newPostContent}
-            onChange={(e) => setNewPostContent(e.target.value)}
-          />
-          <Space>
-            <Text>Interval:</Text>
-            <InputNumber
-              min={10}
-              max={86400}
-              value={newPostMin}
-              onChange={(v) => setNewPostMin(v || 60)}
-              addonAfter="s min"
-            />
-            <InputNumber
-              min={10}
-              max={86400}
-              value={newPostMax}
-              onChange={(v) => setNewPostMax(v || 300)}
-              addonAfter="s max"
-            />
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={handleAddAutoPost}
-              loading={postLoading}
-            >
-              Thêm
-            </Button>
-          </Space>
-        </Space>
-        <List
-          dataSource={autoPostTemplates}
-          locale={{ emptyText: "Chưa có template nào" }}
-          renderItem={(item) => (
-            <List.Item
-              actions={[
-                <Button
-                  key="del"
-                  type="text"
-                  danger
-                  icon={<DeleteOutlined />}
-                  size="small"
-                  onClick={() => handleDeleteAutoPost(item.id)}
-                />,
-              ]}
-            >
-              <Space direction="vertical" size="small" style={{ flex: 1 }}>
-                <Text>{item.content}</Text>
-                <Space size="small">
-                  <Text type="secondary" style={{ fontSize: 12 }}>Interval:</Text>
-                  <InputNumber
-                    min={10}
-                    size="small"
-                    value={item.min_interval_seconds}
-                    onChange={(v) =>
-                      handleUpdateAutoPostInterval(item.id, v || 10, item.max_interval_seconds)
-                    }
-                    addonAfter="s"
-                  />
-                  <Text type="secondary">~</Text>
-                  <InputNumber
-                    min={10}
-                    size="small"
-                    value={item.max_interval_seconds}
-                    onChange={(v) =>
-                      handleUpdateAutoPostInterval(item.id, item.min_interval_seconds, v || 10)
-                    }
-                    addonAfter="s"
-                  />
-                </Space>
-              </Space>
-            </List.Item>
-          )}
-        />
-      </Card>
-
       {/* Banned Words */}
       <Card title="Từ cấm (Banned Words)" style={{ marginBottom: 16 }}>
         <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
-          Các từ này sẽ bị thay thế bằng *** trong reply AI. Mỗi từ 1 dòng.
+          Các từ này sẽ được thay thế bằng *** trong reply AI. Mỗi từ 1 dòng.
         </Text>
         <TextArea
           rows={4}
