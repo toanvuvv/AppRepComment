@@ -1,13 +1,51 @@
+import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import init_db
+from app.config import REPLY_LOG_CLEANUP_INTERVAL_SEC, REPLY_LOG_RETENTION_HOURS
+from app.database import SessionLocal, init_db
+from app.models.reply_log import ReplyLog
+from app.routers.health import router as health_router
 from app.routers.knowledge import router as knowledge_router
 from app.routers.nick_live import router as nick_live_router
+from app.routers.reply_logs import router as reply_logs_router
 from app.routers.settings import router as settings_router
+
+logger = logging.getLogger(__name__)
+
+# Module-level reference; initialised inside lifespan().
+auto_poster: "AutoPoster | None" = None  # noqa: F821
+
+
+def _delete_logs_before(cutoff: datetime) -> int:
+    """Delete reply_log rows older than ``cutoff``. Returns deleted count."""
+    with SessionLocal() as db:
+        n = db.query(ReplyLog).filter(ReplyLog.created_at < cutoff).delete()
+        db.commit()
+        return int(n or 0)
+
+
+async def _reply_log_cleanup_loop() -> None:
+    """Periodically delete reply_log rows older than REPLY_LOG_RETENTION_HOURS."""
+    while True:
+        try:
+            await asyncio.sleep(REPLY_LOG_CLEANUP_INTERVAL_SEC)
+            cutoff = datetime.now(timezone.utc) - timedelta(
+                hours=REPLY_LOG_RETENTION_HOURS
+            )
+            deleted = await asyncio.to_thread(_delete_logs_before, cutoff)
+            logger.info(
+                f"reply_log cleanup: deleted {deleted} rows older than {cutoff}"
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("reply_log cleanup error")
 
 
 @asynccontextmanager
@@ -16,7 +54,42 @@ async def lifespan(app: FastAPI):
     # Load persisted moderator configs into memory cache
     from app.services.live_moderator import moderator
     moderator.load_all_from_db()
-    yield
+
+    # Initialise auto-poster (depends on moderator being loaded)
+    from app.services.auto_poster import AutoPoster
+    global auto_poster
+    auto_poster = AutoPoster(moderator)
+
+    # Start reply log writer background task
+    from app.services.reply_log_writer import reply_log_writer
+    await reply_log_writer.start()
+
+    # Start hourly cleanup task for reply_logs retention.
+    cleanup_task = asyncio.create_task(
+        _reply_log_cleanup_loop(), name="reply-log-cleanup"
+    )
+
+    try:
+        yield
+    finally:
+        # Shutdown sequence.
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("reply_log cleanup task shutdown error")
+
+        await reply_log_writer.stop()
+
+        # Stop all auto-post loops.
+        if auto_poster is not None:
+            auto_poster.stop_all()
+
+        # Close shared httpx client on shutdown so we don't leak sockets.
+        from app.services.http_client import close_client
+        await close_client()
 
 
 is_dev = os.getenv("ENV", "development") == "development"
@@ -40,6 +113,8 @@ app.add_middleware(
 app.include_router(nick_live_router)
 app.include_router(settings_router)
 app.include_router(knowledge_router)
+app.include_router(health_router)
+app.include_router(reply_logs_router)
 
 
 @app.get("/api/health")

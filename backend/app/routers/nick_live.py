@@ -9,6 +9,8 @@ from sse_starlette.sse import EventSourceResponse
 from app.database import get_db
 from app.models.nick_live import NickLive
 from app.schemas.nick_live import (
+    AutoPostStartRequest,
+    HostPostRequest,
     LiveSession,
     LiveSessionsResponse,
     NickLiveCreate,
@@ -22,7 +24,16 @@ from app.schemas.nick_live import (
     ModeratorStatus,
 )
 from app.dependencies import require_api_key
-from app.schemas.settings import NickLiveSettingsResponse, NickLiveSettingsUpdate
+from app.schemas.settings import (
+    AutoPostTemplateCreate,
+    AutoPostTemplateResponse,
+    AutoPostTemplateUpdate,
+    NickLiveSettingsResponse,
+    NickLiveSettingsUpdate,
+    ReplyTemplateCreate,
+    ReplyTemplateResponse,
+)
+from app.services.relive_service import get_host_credentials
 from app.services.comment_scanner import scanner
 from app.services.live_moderator import moderator
 from app.services.settings_service import SettingsService
@@ -64,6 +75,8 @@ def delete_nick_live(nick_live_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail="NickLive not found")
     # Stop scanning if running
     scanner.stop(nick_live_id)
+    from app.services.nick_cache import nick_cache
+    nick_cache.invalidate(nick_live_id)
     db.delete(nick)
     db.commit()
     return {"detail": "Deleted"}
@@ -135,21 +148,24 @@ def get_all_comments(nick_live_id: int) -> list:
 
 @router.get("/{nick_live_id}/comments/stream")
 async def stream_comments(nick_live_id: int) -> EventSourceResponse:
-    """SSE endpoint - streams new comments as they arrive"""
-    queue = scanner.get_queue(nick_live_id)
+    """SSE endpoint - streams new comments as they arrive."""
 
     async def event_generator():
-        while True:
-            try:
-                comment = await asyncio.wait_for(queue.get(), timeout=30.0)
-                if comment is None:
-                    break
-                yield {
-                    "event": "comment",
-                    "data": json.dumps(comment, ensure_ascii=False),
-                }
-            except asyncio.TimeoutError:
-                yield {"event": "ping", "data": ""}
+        queue = scanner.subscribe(nick_live_id)
+        try:
+            while True:
+                try:
+                    comment = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    if comment is None:
+                        break
+                    yield {
+                        "event": "comment",
+                        "data": json.dumps(comment, ensure_ascii=False),
+                    }
+                except asyncio.TimeoutError:
+                    yield {"event": "ping", "data": ""}
+        finally:
+            scanner.unsubscribe(nick_live_id, queue)
 
     return EventSourceResponse(event_generator())
 
@@ -253,5 +269,205 @@ def update_nick_settings(
         auto_reply_enabled=payload.auto_reply_enabled,
         auto_post_enabled=payload.auto_post_enabled,
         knowledge_reply_enabled=payload.knowledge_reply_enabled,
+        host_reply_enabled=payload.host_reply_enabled,
+        host_auto_post_enabled=payload.host_auto_post_enabled,
+        host_proxy=payload.host_proxy,
     )
+    # Invalidate cached per-nick settings so the dispatcher picks up the
+    # new toggles on its next reply cycle.
+    from app.services.nick_cache import nick_cache
+    nick_cache.invalidate_settings(nick_live_id)
     return row
+
+
+# --- Host config endpoints ---
+
+
+@router.post("/{nick_live_id}/host/get-credentials")
+async def host_get_credentials(nick_live_id: int, db: Session = Depends(get_db)):
+    """Fetch usersig+uuid from relive.vn, save to host_config."""
+    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+    if not nick:
+        raise HTTPException(status_code=404, detail="NickLive not found")
+
+    svc = SettingsService(db)
+    api_key = svc.get_setting("relive_api_key")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Relive API key not configured")
+
+    nick_settings = svc.get_or_create_nick_settings(nick_live_id)
+    proxy = getattr(nick_settings, "host_proxy", None)
+
+    try:
+        creds = await get_host_credentials(nick.cookies, api_key, proxy=proxy)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    svc.save_host_config(nick_live_id, creds["usersig"], creds["uuid"])
+    moderator.save_host_config(nick_live_id, creds["usersig"], creds["uuid"])
+
+    return {"status": "ok", "uuid": creds["uuid"]}
+
+
+@router.get("/{nick_live_id}/host/status")
+def host_status(nick_live_id: int, db: Session = Depends(get_db)):
+    """Return host config status."""
+    svc = SettingsService(db)
+    config = svc.get_host_config(nick_live_id)
+    return {
+        "configured": config is not None,
+        "uuid": config.get("uuid") if config else None,
+        "has_usersig": bool(config.get("usersig")) if config else False,
+    }
+
+
+# --- Auto-post endpoints ---
+
+
+@router.post("/{nick_live_id}/auto-post/start")
+async def auto_post_start(
+    nick_live_id: int, payload: AutoPostStartRequest, db: Session = Depends(get_db)
+):
+    """Start auto-post loop."""
+    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+    if not nick:
+        raise HTTPException(status_code=404, detail="NickLive not found")
+
+    from app.main import auto_poster
+    result = await auto_poster.start(nick_live_id, payload.session_id, nick.cookies)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/{nick_live_id}/auto-post/stop")
+async def auto_post_stop(nick_live_id: int):
+    """Stop auto-post loop."""
+    from app.main import auto_poster
+    result = await auto_poster.stop(nick_live_id)
+    return result
+
+
+@router.get("/{nick_live_id}/auto-post/status")
+def auto_post_status(nick_live_id: int):
+    """Check if auto-post is running."""
+    from app.main import auto_poster
+    return {"running": auto_poster.is_running(nick_live_id)}
+
+
+# --- Manual host comment ---
+
+
+@router.post("/{nick_live_id}/host/post")
+async def host_post(
+    nick_live_id: int, payload: HostPostRequest, db: Session = Depends(get_db)
+):
+    """Manual host comment (type 101)."""
+    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+    if not nick:
+        raise HTTPException(status_code=404, detail="NickLive not found")
+
+    if not moderator.has_host_config(nick_live_id):
+        raise HTTPException(status_code=400, detail="Host not configured")
+
+    body = moderator.generate_host_post_body(nick_live_id, payload.content, use_host=True)
+    if not body:
+        raise HTTPException(status_code=400, detail="Failed to generate host message body")
+
+    result = await moderator.send_host_message(
+        nick_live_id, payload.session_id, body, nick.cookies
+    )
+    return result
+
+
+# --- Per-nick auto-post template CRUD ---
+
+
+@router.get(
+    "/{nick_live_id}/auto-post-templates",
+    response_model=list[AutoPostTemplateResponse],
+)
+def list_nick_auto_post_templates(nick_live_id: int, db: Session = Depends(get_db)):
+    svc = SettingsService(db)
+    return svc.get_auto_post_templates_for_nick(nick_live_id)
+
+
+@router.post(
+    "/{nick_live_id}/auto-post-templates",
+    response_model=AutoPostTemplateResponse,
+)
+def create_nick_auto_post_template(
+    nick_live_id: int, payload: AutoPostTemplateCreate, db: Session = Depends(get_db)
+):
+    svc = SettingsService(db)
+    return svc.create_auto_post_template_for_nick(
+        nick_live_id,
+        payload.content,
+        payload.min_interval_seconds,
+        payload.max_interval_seconds,
+    )
+
+
+@router.put(
+    "/{nick_live_id}/auto-post-templates/{template_id}",
+    response_model=AutoPostTemplateResponse,
+)
+def update_nick_auto_post_template(
+    nick_live_id: int,
+    template_id: int,
+    payload: AutoPostTemplateUpdate,
+    db: Session = Depends(get_db),
+):
+    svc = SettingsService(db)
+    result = svc.update_auto_post_template(
+        template_id,
+        content=payload.content,
+        min_interval=payload.min_interval_seconds,
+        max_interval=payload.max_interval_seconds,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return result
+
+
+@router.delete("/{nick_live_id}/auto-post-templates/{template_id}")
+def delete_nick_auto_post_template(
+    nick_live_id: int, template_id: int, db: Session = Depends(get_db)
+):
+    svc = SettingsService(db)
+    if not svc.delete_auto_post_template_for_nick(nick_live_id, template_id):
+        raise HTTPException(status_code=404, detail="Template not found")
+    return {"detail": "Deleted"}
+
+
+# --- Per-nick reply template CRUD ---
+
+
+@router.get(
+    "/{nick_live_id}/reply-templates",
+    response_model=list[ReplyTemplateResponse],
+)
+def list_nick_reply_templates(nick_live_id: int, db: Session = Depends(get_db)):
+    svc = SettingsService(db)
+    return svc.get_reply_templates_for_nick(nick_live_id)
+
+
+@router.post(
+    "/{nick_live_id}/reply-templates",
+    response_model=ReplyTemplateResponse,
+)
+def create_nick_reply_template(
+    nick_live_id: int, payload: ReplyTemplateCreate, db: Session = Depends(get_db)
+):
+    svc = SettingsService(db)
+    return svc.create_reply_template_for_nick(nick_live_id, payload.content)
+
+
+@router.delete("/{nick_live_id}/reply-templates/{template_id}")
+def delete_nick_reply_template(
+    nick_live_id: int, template_id: int, db: Session = Depends(get_db)
+):
+    svc = SettingsService(db)
+    if not svc.delete_reply_template_for_nick(nick_live_id, template_id):
+        raise HTTPException(status_code=404, detail="Template not found")
+    return {"detail": "Deleted"}

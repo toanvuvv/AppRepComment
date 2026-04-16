@@ -20,7 +20,22 @@ from app.schemas.settings import (
     SystemPromptUpdate,
 )
 from app.services.ai_reply_service import generate_reply
+from app.services.nick_cache import nick_cache
 from app.services.settings_service import SettingsService
+
+
+def _invalidate_all_nick_settings() -> None:
+    """Drop every cached per-nick settings snapshot.
+
+    App-level settings (api key, model, system prompt, knowledge config,
+    banned words) flow into every nick's snapshot, so a change here must
+    force a refresh on the next reply cycle for all nicks. We deliberately
+    clear the private dict on the cache singleton rather than exposing a
+    new public method, per Wave 2 instructions.
+    """
+    # Direct dict clear — the cache API doesn't publish a bulk-invalidate
+    # helper, but the underlying storage is a plain dict.
+    nick_cache._settings.clear()
 
 router = APIRouter(
     prefix="/api/settings",
@@ -45,6 +60,7 @@ def update_openai_config(
     svc = SettingsService(db)
     svc.set_setting("openai_api_key", payload.api_key)
     svc.set_setting("openai_model", payload.model)
+    _invalidate_all_nick_settings()
     return {"status": "saved"}
 
 
@@ -62,6 +78,7 @@ def update_system_prompt(
 ) -> dict:
     svc = SettingsService(db)
     svc.set_setting("ai_system_prompt", payload.prompt)
+    _invalidate_all_nick_settings()
     return {"status": "saved"}
 
 
@@ -168,6 +185,7 @@ def update_knowledge_ai_config(
         svc.set_setting("knowledge_system_prompt", payload.system_prompt)
     if payload.model is not None:
         svc.set_setting("knowledge_model", payload.model)
+    _invalidate_all_nick_settings()
     return {"status": "saved"}
 
 
@@ -184,4 +202,22 @@ def get_banned_words(db: Session = Depends(get_db)):
 def update_banned_words(payload: BannedWordsUpdate, db: Session = Depends(get_db)):
     svc = SettingsService(db)
     svc.set_banned_words(payload.words)
+    _invalidate_all_nick_settings()
+    return {"status": "saved"}
+
+
+# --- Relive API key ---
+
+
+@router.get("/relive-api-key")
+def get_relive_key(db: Session = Depends(get_db)):
+    svc = SettingsService(db)
+    key = svc.get_setting("relive_api_key")
+    return {"api_key_set": bool(key), "api_key": key or ""}
+
+
+@router.put("/relive-api-key")
+def update_relive_key(payload: dict, db: Session = Depends(get_db)):
+    svc = SettingsService(db)
+    svc.set_setting("relive_api_key", payload.get("api_key", ""))
     return {"status": "saved"}
