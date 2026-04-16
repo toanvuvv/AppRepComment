@@ -55,6 +55,9 @@ class NickLiveSettingsUpdate(BaseModel):
     auto_reply_enabled: bool | None = None
     auto_post_enabled: bool | None = None
     knowledge_reply_enabled: bool | None = None
+    host_reply_enabled: bool | None = None
+    host_auto_post_enabled: bool | None = None
+    host_proxy: str | None = None
 
 
 class NickLiveSettingsResponse(BaseModel):
@@ -63,6 +66,8 @@ class NickLiveSettingsResponse(BaseModel):
     auto_reply_enabled: bool
     auto_post_enabled: bool
     knowledge_reply_enabled: bool
+    host_reply_enabled: bool
+    host_auto_post_enabled: bool
     model_config = {"from_attributes": True}
 
 

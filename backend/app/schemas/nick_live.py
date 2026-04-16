@@ -98,3 +98,34 @@ class ModeratorStatus(BaseModel):
     configured: bool
     host_id: str | None = None
     has_usersig: bool = False
+
+
+# --- Host schemas ---
+
+
+class HostGetCredentialsResponse(BaseModel):
+    status: str
+    uuid: str | None = None
+    error: str | None = None
+
+
+class HostConfigStatus(BaseModel):
+    configured: bool
+    uuid: str | None = None
+    has_usersig: bool = False
+    proxy: str | None = None
+
+
+class AutoPostStartRequest(BaseModel):
+    session_id: int
+
+
+class AutoPostStatusResponse(BaseModel):
+    running: bool
+
+
+class HostPostRequest(BaseModel):
+    """Manual host comment (type 101)."""
+
+    content: str = Field(..., min_length=1, max_length=2000)
+    session_id: int
