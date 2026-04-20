@@ -517,8 +517,16 @@ class ShopeeLiveModerator:
 
 
     def drop_user(self, user_id: int) -> None:
-        """Evict moderator cache entries for nicks owned by user_id. Implemented in Task 11."""
-        pass
+        """Evict moderator and host cache entries for nicks owned by user_id."""
+        from app.database import SessionLocal
+        from app.models.nick_live import NickLive
+        with SessionLocal() as db:
+            ids = [nid for (nid,) in db.query(NickLive.id)
+                   .filter(NickLive.user_id == user_id).all()]
+        for nid in ids:
+            self._configs.pop(nid, None)
+            self._host_configs.pop(nid, None)
+        logger.info(f"drop_user: evicted cache for user={user_id} nicks={ids}")
 
 
 # Singleton instance

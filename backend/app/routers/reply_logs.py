@@ -16,8 +16,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_api_key
+from app.dependencies import get_current_user
+from app.models.nick_live import NickLive
 from app.models.reply_log import ReplyLog
+from app.models.user import User
 from app.schemas.reply_log import ReplyLogResponse, ReplyLogStats
 
 logger = logging.getLogger(__name__)
@@ -25,12 +27,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/reply-logs",
     tags=["reply-logs"],
-    dependencies=[Depends(require_api_key)],
 )
 
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _owned_nick_ids(user_id: int, db: Session):
+    """Return a subquery of nick_live ids owned by user_id."""
+    return db.query(NickLive.id).filter(NickLive.user_id == user_id).subquery()
 
 
 @router.get("", response_model=list[ReplyLogResponse])
@@ -42,9 +48,11 @@ def list_reply_logs(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[ReplyLog]:
     """List reply log rows, newest first."""
-    q = db.query(ReplyLog)
+    owned = _owned_nick_ids(current_user.id, db)
+    q = db.query(ReplyLog).filter(ReplyLog.nick_live_id.in_(owned))
     if nick_live_id is not None:
         q = q.filter(ReplyLog.nick_live_id == nick_live_id)
     if outcome:
@@ -66,6 +74,7 @@ def reply_log_stats(
     nick_live_id: int | None = None,
     since: datetime | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ReplyLogStats:
     """Aggregate counts and latency percentiles over a time window.
 
@@ -75,7 +84,11 @@ def reply_log_stats(
     if since is None:
         since = until - timedelta(hours=24)
 
-    q = db.query(ReplyLog).filter(ReplyLog.created_at >= since)
+    owned = _owned_nick_ids(current_user.id, db)
+    q = db.query(ReplyLog).filter(
+        ReplyLog.created_at >= since,
+        ReplyLog.nick_live_id.in_(owned),
+    )
     if nick_live_id is not None:
         q = q.filter(ReplyLog.nick_live_id == nick_live_id)
     rows = q.all()

@@ -11,21 +11,28 @@ logger = logging.getLogger(__name__)
 
 
 class SettingsService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, user_id: int | None = None) -> None:
         self._db = db
+        self._user_id = user_id
 
     # --- App settings (key-value) ---
 
     def get_setting(self, key: str) -> str | None:
-        row = self._db.query(AppSetting).filter(AppSetting.key == key).first()
+        q = self._db.query(AppSetting).filter(AppSetting.key == key)
+        if self._user_id is not None:
+            q = q.filter(AppSetting.user_id == self._user_id)
+        row = q.first()
         return row.value if row else None
 
     def set_setting(self, key: str, value: str) -> None:
-        row = self._db.query(AppSetting).filter(AppSetting.key == key).first()
+        q = self._db.query(AppSetting).filter(AppSetting.key == key)
+        if self._user_id is not None:
+            q = q.filter(AppSetting.user_id == self._user_id)
+        row = q.first()
         if row:
             row.value = value
         else:
-            row = AppSetting(key=key, value=value)
+            row = AppSetting(key=key, value=value, user_id=self._user_id)
             self._db.add(row)
         self._db.commit()
 

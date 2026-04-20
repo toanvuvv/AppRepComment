@@ -127,3 +127,23 @@ def test_cannot_lock_self():
     r = client.patch(f"/api/admin/users/{_id('adm_admin')}",
                      headers=_hdr(tok), json={"is_locked": True})
     assert r.status_code == 400
+
+
+def test_lock_triggers_auto_poster_stop(monkeypatch):
+    calls = []
+
+    class FakePoster:
+        def stop_user_nicks(self, uid): calls.append(("stop", uid))
+        def start_user_nicks(self, uid): calls.append(("start", uid))
+        def stop_all(self): pass
+
+    import app.main
+    monkeypatch.setattr(app.main, "auto_poster", FakePoster())
+
+    tok = _login("adm_admin")
+    aid = _id("adm_alice")
+
+    client.patch(f"/api/admin/users/{aid}", headers=_hdr(tok), json={"is_locked": True})
+    client.patch(f"/api/admin/users/{aid}", headers=_hdr(tok), json={"is_locked": False})
+    assert ("stop", aid) in calls
+    assert ("start", aid) in calls
