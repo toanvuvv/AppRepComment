@@ -83,12 +83,17 @@ def update_user(
     db.refresh(u)
 
     if body.is_locked is not None:
-        from app.main import auto_poster
-        if auto_poster is not None:
-            if body.is_locked:
+        from app.main import auto_poster, auto_pinner
+        if body.is_locked:
+            if auto_poster is not None:
                 auto_poster.stop_user_nicks(u.id)
-            else:
+            if auto_pinner is not None:
+                auto_pinner.stop_user_nicks(u.id)
+        else:
+            if auto_poster is not None:
                 auto_poster.start_user_nicks(u.id)
+            if auto_pinner is not None:
+                auto_pinner.start_user_nicks(u.id)
 
     return UserOut.model_validate(u)
 
@@ -109,12 +114,14 @@ def delete_user(
         if remaining == 0:
             raise HTTPException(status_code=400, detail="Cannot delete last admin")
 
-    from app.main import auto_poster
+    from app.main import auto_poster, auto_pinner
     from app.services.live_moderator import moderator
     import logging as _logging
     try:
         if auto_poster is not None:
             auto_poster.stop_user_nicks(u.id)
+        if auto_pinner is not None:
+            auto_pinner.stop_user_nicks(u.id)
         moderator.drop_user(u.id)
     except Exception as exc:
         _logging.getLogger(__name__).warning(

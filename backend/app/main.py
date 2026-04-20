@@ -98,6 +98,10 @@ async def lifespan(app: FastAPI):
         if auto_poster is not None:
             auto_poster.stop_all()
 
+        # Stop all auto-pin loops.
+        if auto_pinner is not None:
+            auto_pinner.stop_all()
+
         # Close shared httpx client on shutdown so we don't leak sockets.
         from app.services.http_client import close_client
         await close_client()
