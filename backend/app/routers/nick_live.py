@@ -412,7 +412,7 @@ def get_nick_settings(
     ).first()
     if not nick:
         raise HTTPException(status_code=404, detail="Nick not found")
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     row = svc.get_or_create_nick_settings(nick_live_id)
     return row
 
@@ -429,7 +429,7 @@ def update_nick_settings(
     ).first()
     if not nick:
         raise HTTPException(status_code=404, detail="Nick not found")
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     try:
         row = svc.update_nick_settings(
             nick_live_id,
@@ -467,7 +467,7 @@ async def host_get_credentials(
     if not nick:
         raise HTTPException(status_code=404, detail="NickLive not found")
 
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     api_key = svc.get_setting("relive_api_key")
     if not api_key:
         raise HTTPException(status_code=400, detail="Relive API key not configured")
@@ -495,7 +495,7 @@ def host_status(
 ):
     """Return host config status."""
     _owned_nick_or_404(db, nick_live_id, current_user.id)
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     config = svc.get_host_config(nick_live_id)
     return {
         "configured": config is not None,
@@ -606,7 +606,7 @@ def list_nick_auto_post_templates(
     current_user: User = Depends(get_current_user),
 ):
     _require_nick_ownership(nick_live_id, current_user, db)
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     return svc.get_auto_post_templates_for_nick(nick_live_id)
 
 
@@ -621,7 +621,7 @@ def create_nick_auto_post_template(
     current_user: User = Depends(get_current_user),
 ):
     _require_nick_ownership(nick_live_id, current_user, db)
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     return svc.create_auto_post_template_for_nick(
         nick_live_id,
         payload.content,
@@ -642,7 +642,7 @@ def update_nick_auto_post_template(
     current_user: User = Depends(get_current_user),
 ):
     _require_nick_ownership(nick_live_id, current_user, db)
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     result = svc.update_auto_post_template(
         template_id,
         content=payload.content,
@@ -662,7 +662,7 @@ def delete_nick_auto_post_template(
     current_user: User = Depends(get_current_user),
 ):
     _require_nick_ownership(nick_live_id, current_user, db)
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     if not svc.delete_auto_post_template_for_nick(nick_live_id, template_id):
         raise HTTPException(status_code=404, detail="Template not found")
     return {"detail": "Deleted"}
@@ -681,7 +681,7 @@ def list_nick_reply_templates(
     current_user: User = Depends(get_current_user),
 ):
     _require_nick_ownership(nick_live_id, current_user, db)
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     return svc.get_reply_templates_for_nick(nick_live_id)
 
 
@@ -696,7 +696,7 @@ def create_nick_reply_template(
     current_user: User = Depends(get_current_user),
 ):
     _require_nick_ownership(nick_live_id, current_user, db)
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     return svc.create_reply_template_for_nick(nick_live_id, payload.content)
 
 
@@ -708,7 +708,7 @@ def delete_nick_reply_template(
     current_user: User = Depends(get_current_user),
 ):
     _require_nick_ownership(nick_live_id, current_user, db)
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     if not svc.delete_reply_template_for_nick(nick_live_id, template_id):
         raise HTTPException(status_code=404, detail="Template not found")
     return {"detail": "Deleted"}

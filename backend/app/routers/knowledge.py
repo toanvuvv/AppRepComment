@@ -67,7 +67,7 @@ async def parse_products_from_relive(
     """Fetch live items from relive.vn API and import as knowledge products."""
     nick = _require_nick_ownership(nick_live_id, current_user, db)
 
-    svc = SettingsService(db)
+    svc = SettingsService(db, user_id=current_user.id)
     api_key = svc.get_setting("relive_api_key")
     if not api_key:
         raise HTTPException(status_code=400, detail="Relive API key not configured")
