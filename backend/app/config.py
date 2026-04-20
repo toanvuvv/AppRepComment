@@ -4,6 +4,8 @@ Plain module-level assignments (no dataclass) so they can be imported
 cheaply anywhere without side effects.
 """
 
+import os
+
 POLL_INTERVAL_SEC: float = 2.0
 REPLY_WORKER_COUNT: int = 2
 REPLY_CONCURRENCY: int = 10  # global LLM concurrency
@@ -30,3 +32,15 @@ REPLY_CACHE_MAX_ENTRIES: int = 2000
 CIRCUIT_WINDOW_SIZE: int = 20
 CIRCUIT_ERROR_THRESHOLD: float = 0.5
 CIRCUIT_OPEN_DURATION_SEC: float = 60.0
+
+# --- Auth config ---
+JWT_SECRET: str = os.getenv("JWT_SECRET", "dev-insecure-change-me")
+JWT_ALGORITHM: str = "HS256"
+JWT_TTL_HOURS: int = int(os.getenv("JWT_TTL_HOURS", "8"))
+
+ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "")
+ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
+ENV: str = os.getenv("ENV", "development")
+
+if ENV != "development" and JWT_SECRET == "dev-insecure-change-me":
+    raise RuntimeError("JWT_SECRET must be set in non-dev environments")
