@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { CommentItem, getComments } from "../api/nickLive";
+import { withTokenQuery } from "../api/client";
 
 const INITIAL_RETRY_DELAY = 1000;
 const MAX_RETRY_DELAY = 10000;
@@ -46,10 +47,7 @@ export function useSSEComments(
     function connect() {
       if (cancelled) return;
 
-      const apiKey = import.meta.env.VITE_APP_API_KEY as string | undefined;
-      const url = apiKey
-        ? `/api/nick-lives/${nickLiveId}/comments/stream?api_key=${encodeURIComponent(apiKey)}`
-        : `/api/nick-lives/${nickLiveId}/comments/stream`;
+      const url = withTokenQuery(`/api/nick-lives/${nickLiveId}/comments/stream`);
 
       const es = new EventSource(url);
       eventSourceRef.current = es;
