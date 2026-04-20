@@ -103,6 +103,20 @@ def migrate() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS ix_app_settings_user_id ON app_settings(user_id)")
             logger.info("Added app_settings.user_id + backfilled")
 
+        # 5. Add user_id to reply_templates and auto_post_templates
+        for table in ("reply_templates", "auto_post_templates"):
+            if _table_exists(cur, table) and not _col_exists(cur, table, "user_id"):
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER")
+                if admin_id is not None:
+                    cur.execute(
+                        f"UPDATE {table} SET user_id=? WHERE user_id IS NULL",
+                        (admin_id,),
+                    )
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS ix_{table}_user_id ON {table}(user_id)"
+                )
+                logger.info(f"Added {table}.user_id + backfilled")
+
         raw.commit()
         logger.info("Migration 004_multi_user complete")
     finally:

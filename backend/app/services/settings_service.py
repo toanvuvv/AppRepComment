@@ -53,17 +53,23 @@ class SettingsService:
     # --- Reply templates ---
 
     def get_reply_templates(self) -> list[ReplyTemplate]:
-        return self._db.query(ReplyTemplate).order_by(ReplyTemplate.created_at).all()
+        q = self._db.query(ReplyTemplate).filter(ReplyTemplate.nick_live_id.is_(None))
+        if self._user_id is not None:
+            q = q.filter(ReplyTemplate.user_id == self._user_id)
+        return q.order_by(ReplyTemplate.created_at).all()
 
     def create_reply_template(self, content: str) -> ReplyTemplate:
-        tmpl = ReplyTemplate(content=content)
+        tmpl = ReplyTemplate(content=content, user_id=self._user_id)
         self._db.add(tmpl)
         self._db.commit()
         self._db.refresh(tmpl)
         return tmpl
 
     def delete_reply_template(self, template_id: int) -> bool:
-        tmpl = self._db.query(ReplyTemplate).filter(ReplyTemplate.id == template_id).first()
+        q = self._db.query(ReplyTemplate).filter(ReplyTemplate.id == template_id)
+        if self._user_id is not None:
+            q = q.filter(ReplyTemplate.user_id == self._user_id)
+        tmpl = q.first()
         if not tmpl:
             return False
         self._db.delete(tmpl)
@@ -73,7 +79,10 @@ class SettingsService:
     # --- Auto-post templates ---
 
     def get_auto_post_templates(self) -> list[AutoPostTemplate]:
-        return self._db.query(AutoPostTemplate).order_by(AutoPostTemplate.created_at).all()
+        q = self._db.query(AutoPostTemplate).filter(AutoPostTemplate.nick_live_id.is_(None))
+        if self._user_id is not None:
+            q = q.filter(AutoPostTemplate.user_id == self._user_id)
+        return q.order_by(AutoPostTemplate.created_at).all()
 
     def create_auto_post_template(
         self, content: str, min_interval: int = 60, max_interval: int = 300
@@ -82,6 +91,7 @@ class SettingsService:
             content=content,
             min_interval_seconds=min_interval,
             max_interval_seconds=max_interval,
+            user_id=self._user_id,
         )
         self._db.add(tmpl)
         self._db.commit()
@@ -95,7 +105,10 @@ class SettingsService:
         min_interval: int | None = None,
         max_interval: int | None = None,
     ) -> AutoPostTemplate | None:
-        tmpl = self._db.query(AutoPostTemplate).filter(AutoPostTemplate.id == template_id).first()
+        q = self._db.query(AutoPostTemplate).filter(AutoPostTemplate.id == template_id)
+        if self._user_id is not None:
+            q = q.filter(AutoPostTemplate.user_id == self._user_id)
+        tmpl = q.first()
         if not tmpl:
             return None
         if content is not None:
@@ -109,7 +122,10 @@ class SettingsService:
         return tmpl
 
     def delete_auto_post_template(self, template_id: int) -> bool:
-        tmpl = self._db.query(AutoPostTemplate).filter(AutoPostTemplate.id == template_id).first()
+        q = self._db.query(AutoPostTemplate).filter(AutoPostTemplate.id == template_id)
+        if self._user_id is not None:
+            q = q.filter(AutoPostTemplate.user_id == self._user_id)
+        tmpl = q.first()
         if not tmpl:
             return False
         self._db.delete(tmpl)
