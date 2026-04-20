@@ -153,3 +153,6 @@ def init_db():
     import importlib
     m003 = importlib.import_module("migrations.003_host_comment")
     m003.migrate()
+
+    m004 = importlib.import_module("migrations.004_multi_user")
+    m004.migrate()

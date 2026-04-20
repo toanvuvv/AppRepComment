@@ -53,7 +53,7 @@ def create_nick_live(payload: NickLiveCreate, db: Session = Depends(get_db)) -> 
     user_data = payload.user
     nick = NickLive(
         name=user_data.name,
-        user_id=user_data.id,
+        shopee_user_id=user_data.id,
         shop_id=user_data.shop_id,
         avatar=user_data.avatar,
         cookies=payload.cookies,
@@ -87,7 +87,7 @@ def update_nick_cookies(
     nick.cookies = payload.cookies
     if payload.user is not None:
         nick.name = payload.user.name
-        nick.user_id = payload.user.id
+        nick.shopee_user_id = payload.user.id
         nick.shop_id = payload.user.shop_id
         nick.avatar = payload.user.avatar
     db.commit()

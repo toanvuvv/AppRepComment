@@ -27,7 +27,7 @@ class NickLiveUpdateCookies(BaseModel):
 class NickLiveResponse(BaseModel):
     id: int
     name: str
-    user_id: int
+    shopee_user_id: int
     shop_id: int | None
     avatar: str | None
     created_at: datetime
