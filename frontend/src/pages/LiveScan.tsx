@@ -224,7 +224,12 @@ function LiveScan() {
       if (err instanceof SyntaxError) {
         message.error("JSON không hợp lệ");
       } else {
-        message.error("Không thể thêm nick live");
+        const apiErr = err as { response?: { status?: number; data?: { detail?: string } } };
+        if (apiErr.response?.status === 403) {
+          message.error(apiErr.response.data?.detail ?? "Không được phép: vượt quá giới hạn nick");
+        } else {
+          message.error(apiErr.response?.data?.detail ?? "Không thể thêm nick live");
+        }
       }
     } finally {
       setAddLoading(false);
