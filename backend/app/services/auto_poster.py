@@ -80,6 +80,31 @@ class AutoPoster:
                 task.cancel()
         self._template_index.clear()
 
+    def _user_nick_ids(self, user_id: int) -> list[int]:
+        from app.database import SessionLocal
+        from app.models.nick_live import NickLive
+        with SessionLocal() as db:
+            return [nid for (nid,) in db.query(NickLive.id)
+                    .filter(NickLive.user_id == user_id).all()]
+
+    def stop_user_nicks(self, user_id: int) -> None:
+        """Stop all running auto-post loops for nicks owned by user_id."""
+        for nid in self._user_nick_ids(user_id):
+            task = self._tasks.pop(nid, None)
+            self._template_index.pop(nid, None)
+            if task and not task.done():
+                task.cancel()
+                logger.info(f"Auto-post stopped (lock) for nick={nid} user={user_id}")
+
+    def start_user_nicks(self, user_id: int) -> None:
+        """Re-start auto-post loops is intentionally a no-op on unlock.
+
+        Re-starting requires session_id and cookies which are not available
+        at lock/unlock time. The frontend will re-trigger auto-post start
+        explicitly when needed. This method exists as a hook for future use.
+        """
+        logger.info(f"start_user_nicks called for user={user_id} (no-op — frontend re-triggers)")
+
     async def _loop(self, nick_live_id: int, session_id: int, cookies: str) -> None:
         try:
             while True:

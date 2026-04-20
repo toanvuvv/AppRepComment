@@ -49,7 +49,7 @@ function Settings() {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [promptLoading, setPromptLoading] = useState(false);
 
-  // Relive API key
+  // Relive API key — never store the current value; only track whether one is configured
   const [reliveKey, setReliveKey] = useState("");
   const [reliveKeySet, setReliveKeySet] = useState(false);
   const [reliveLoading, setReliveLoading] = useState(false);
@@ -83,7 +83,8 @@ function Settings() {
 
     getReliveApiKey().then((r) => {
       setReliveKeySet(r.api_key_set);
-      if (r.api_key) setReliveKey(r.api_key);
+      // Never populate the input with the stored key value.
+      setReliveKey("");
     });
   }, []);
 
@@ -228,9 +229,14 @@ function Settings() {
 
       {/* Relive.vn API Key */}
       <Card title="Relive.vn API Key" style={{ marginBottom: 16 }}>
+        {reliveKeySet && (
+          <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+            <Tag color="green">Đã cấu hình</Tag> Nhập key mới bên dưới để thay thế.
+          </Text>
+        )}
         <Space>
           <Input.Password
-            placeholder="Relive API key"
+            placeholder={reliveKeySet ? "Nhập key mới để thay thế" : "Relive API key"}
             value={reliveKey}
             onChange={(e) => setReliveKey(e.target.value)}
             style={{ width: 400 }}
@@ -238,7 +244,6 @@ function Settings() {
           <Button type="primary" onClick={handleSaveReliveKey} loading={reliveLoading}>
             Save
           </Button>
-          {reliveKeySet && <Tag color="green">Set</Tag>}
         </Space>
       </Card>
 

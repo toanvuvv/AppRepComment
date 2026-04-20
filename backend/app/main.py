@@ -6,10 +6,15 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import REPLY_LOG_CLEANUP_INTERVAL_SEC, REPLY_LOG_RETENTION_HOURS
 from app.database import SessionLocal, init_db
 from app.models.reply_log import ReplyLog
+from app.routers.admin import router as admin_router
+from app.routers.auth import router as auth_router
 from app.routers.health import router as health_router
 from app.routers.knowledge import router as knowledge_router
 from app.routers.nick_live import router as nick_live_router
@@ -102,14 +107,30 @@ app = FastAPI(
     redoc_url="/redoc" if is_dev else None,
 )
 
+from app.rate_limit import limiter
+
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+
+@app.exception_handler(RateLimitExceeded)
+def _rate_limit_handler(request, exc):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many attempts, try again later"},
+    )
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","),
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*", "X-API-Key"],
+    allow_headers=["*"],
 )
 
+app.include_router(admin_router)
+app.include_router(auth_router)
 app.include_router(nick_live_router)
 app.include_router(settings_router)
 app.include_router(knowledge_router)
