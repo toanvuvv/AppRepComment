@@ -1,12 +1,15 @@
-import { Layout, Menu } from "antd";
-import { HomeOutlined, CommentOutlined, SettingOutlined } from "@ant-design/icons";
+import { Layout, Menu, Dropdown, Avatar, Space } from "antd";
+import { HomeOutlined, CommentOutlined, SettingOutlined, UserOutlined, LogoutOutlined, KeyOutlined, TeamOutlined } from "@ant-design/icons";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import type { MenuProps } from "antd";
+import { useAuth } from "../contexts/AuthContext";
 
 const { Header, Content, Footer } = Layout;
 
 function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, logout } = useAuth();
 
   const menuItems = [
     {
@@ -25,6 +28,27 @@ function AppLayout() {
       label: "Cài đặt AI",
     },
   ];
+
+  const userMenu: MenuProps = {
+    items: [
+      {
+        key: "cp",
+        label: "Đổi mật khẩu",
+        icon: <KeyOutlined />,
+        onClick: () => navigate("/change-password"),
+      },
+      ...(user?.role === "admin"
+        ? [{ key: "admin", label: "Quản lý user", icon: <TeamOutlined />, onClick: () => navigate("/admin/users") }]
+        : []),
+      { type: "divider" as const, key: "d1" },
+      {
+        key: "logout",
+        label: "Đăng xuất",
+        icon: <LogoutOutlined />,
+        onClick: () => { logout(); navigate("/login"); },
+      },
+    ],
+  };
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
@@ -48,6 +72,12 @@ function AppLayout() {
           onClick={({ key }) => navigate(key)}
           style={{ flex: 1 }}
         />
+        <Dropdown menu={userMenu} placement="bottomRight" trigger={["click"]}>
+          <Space style={{ cursor: "pointer", marginLeft: 16, color: "#fff" }}>
+            <Avatar size="small" icon={<UserOutlined />} />
+            <span>{user?.username}</span>
+          </Space>
+        </Dropdown>
       </Header>
       <Content style={{ padding: 24 }}>
         <Outlet />
