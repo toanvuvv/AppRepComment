@@ -111,9 +111,15 @@ def delete_user(
 
     from app.main import auto_poster
     from app.services.live_moderator import moderator
-    if auto_poster is not None:
-        auto_poster.stop_user_nicks(u.id)
-    moderator.drop_user(u.id)
+    import logging as _logging
+    try:
+        if auto_poster is not None:
+            auto_poster.stop_user_nicks(u.id)
+        moderator.drop_user(u.id)
+    except Exception as exc:
+        _logging.getLogger(__name__).warning(
+            "Side-effect cleanup failed on user delete; continuing: %s", exc
+        )
 
     db.delete(u)
     db.commit()
