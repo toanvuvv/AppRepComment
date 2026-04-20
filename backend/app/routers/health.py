@@ -4,7 +4,7 @@ Exposes per-nick runtime state aggregated from the scanner, dispatcher,
 rate limiter, reply cache, and (optionally) the circuit registry. Intended
 to power a 20-nick dashboard.
 
-Security: all routes require the app API key via ``Depends(require_api_key)``.
+Security: all routes require a valid JWT (admin or regular user).
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from app.config import REPLY_CACHE_MAX_ENTRIES, REPLY_CONCURRENCY, SHOPEE_BURST, SHOPEE_RATE_PER_SEC
-from app.dependencies import require_api_key
+from app.dependencies import get_current_user
 from app.services.comment_scanner import scanner
 from app.services.reply_dispatcher import dispatcher
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/health",
     tags=["health"],
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_current_user)],
 )
 
 

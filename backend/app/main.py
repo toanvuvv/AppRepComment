@@ -109,7 +109,7 @@ app.add_middleware(
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173").split(","),
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*", "X-API-Key"],
+    allow_headers=["*"],
 )
 
 app.include_router(admin_router)

@@ -1,29 +1,10 @@
-import os
-
-from fastapi import Depends, HTTPException, Query, Request, Security
+from fastapi import Depends, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from fastapi.security.api_key import APIKeyHeader
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User
 from app.services.auth import decode_access_token
-
-# --- Legacy API key (deprecated, removed in Task 12) ---
-_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-_APP_API_KEY = os.getenv("APP_API_KEY", "")
-
-
-def require_api_key(
-    key: str | None = Security(_api_key_header),
-    api_key_query: str | None = Query(None, alias="api_key"),
-) -> None:
-    if not _APP_API_KEY:
-        return
-    provided = key or api_key_query
-    if provided != _APP_API_KEY:
-        raise HTTPException(status_code=403, detail="Invalid or missing API key")
-
 
 # --- JWT auth ---
 _bearer = HTTPBearer(auto_error=False)
