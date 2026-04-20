@@ -38,3 +38,14 @@ def _reset_rate_limiter():
     except Exception:
         pass
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_attempts():
+    """Reset per-IP failed login counters between tests."""
+    try:
+        from app.services import login_attempts
+        login_attempts.reset()
+    except Exception:
+        pass
+    yield
