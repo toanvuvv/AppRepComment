@@ -24,7 +24,8 @@ from app.schemas.nick_live import (
     ModeratorSaveCurlRequest,
     ModeratorStatus,
 )
-from app.dependencies import require_api_key
+from app.dependencies import get_current_user
+from app.models.user import User
 from app.schemas.settings import (
     AutoPostTemplateCreate,
     AutoPostTemplateResponse,
@@ -44,18 +45,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/nick-lives",
     tags=["nick-lives"],
-    dependencies=[Depends(require_api_key)],
 )
 
 
 @router.post("", response_model=NickLiveResponse)
-def create_nick_live(payload: NickLiveCreate, db: Session = Depends(get_db)) -> NickLive:
-    user_data = payload.user
+def create_nick_live(
+    payload: NickLiveCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> NickLive:
+    # Enforce quota
+    if current_user.max_nicks is not None:
+        n = db.query(NickLive).filter(NickLive.user_id == current_user.id).count()
+        if n >= current_user.max_nicks:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Nick quota exceeded (max {current_user.max_nicks})",
+            )
+
+    # Support both flat and nested create forms
+    if payload.user is not None:
+        name = payload.user.name
+        shopee_user_id = payload.user.id
+        shop_id = payload.user.shop_id
+        avatar = payload.user.avatar
+    else:
+        name = payload.name or ""
+        shopee_user_id = payload.shopee_user_id or 0
+        shop_id = payload.shop_id
+        avatar = payload.avatar
+
     nick = NickLive(
-        name=user_data.name,
-        shopee_user_id=user_data.id,
-        shop_id=user_data.shop_id,
-        avatar=user_data.avatar,
+        user_id=current_user.id,
+        name=name,
+        shopee_user_id=shopee_user_id,
+        shop_id=shop_id,
+        avatar=avatar,
         cookies=payload.cookies,
     )
     db.add(nick)
@@ -65,8 +90,16 @@ def create_nick_live(payload: NickLiveCreate, db: Session = Depends(get_db)) -> 
 
 
 @router.get("", response_model=list[NickLiveResponse])
-def list_nick_lives(db: Session = Depends(get_db)) -> list[NickLive]:
-    return db.query(NickLive).order_by(NickLive.created_at.desc()).all()
+def list_nick_lives(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[NickLive]:
+    return (
+        db.query(NickLive)
+        .filter(NickLive.user_id == current_user.id)
+        .order_by(NickLive.created_at.desc())
+        .all()
+    )
 
 
 @router.patch("/{nick_live_id}/cookies", response_model=NickLiveResponse)
@@ -74,13 +107,16 @@ def update_nick_cookies(
     nick_live_id: int,
     payload: NickLiveUpdateCookies,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> NickLive:
     """Update cookies for an existing nick live.
 
     If the scanner is running, it is restarted with the new cookies on the
     same session so the poll loop picks up the fresh auth.
     """
-    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
     if not nick:
         raise HTTPException(status_code=404, detail="NickLive not found")
 
@@ -111,8 +147,14 @@ def update_nick_cookies(
 
 
 @router.delete("/{nick_live_id}")
-def delete_nick_live(nick_live_id: int, db: Session = Depends(get_db)) -> dict:
-    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+def delete_nick_live(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
     if not nick:
         raise HTTPException(status_code=404, detail="NickLive not found")
     # Stop scanning if running
@@ -125,8 +167,14 @@ def delete_nick_live(nick_live_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/{nick_live_id}/sessions", response_model=LiveSessionsResponse)
-async def get_sessions(nick_live_id: int, db: Session = Depends(get_db)) -> LiveSessionsResponse:
-    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+async def get_sessions(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> LiveSessionsResponse:
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
     if not nick:
         raise HTTPException(status_code=404, detail="NickLive not found")
 
@@ -159,8 +207,15 @@ async def get_sessions(nick_live_id: int, db: Session = Depends(get_db)) -> Live
 
 
 @router.post("/{nick_live_id}/scan/start")
-async def start_scan(nick_live_id: int, session_id: int, db: Session = Depends(get_db)) -> dict:
-    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+async def start_scan(
+    nick_live_id: int,
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
     if not nick:
         raise HTTPException(status_code=404, detail="NickLive not found")
 
@@ -217,10 +272,15 @@ async def stream_comments(nick_live_id: int) -> EventSourceResponse:
 
 @router.post("/{nick_live_id}/moderator/save-curl")
 async def save_moderator_curl(
-    nick_live_id: int, payload: ModeratorSaveCurlRequest, db: Session = Depends(get_db)
+    nick_live_id: int,
+    payload: ModeratorSaveCurlRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Save moderator cURL template for this nick_live."""
-    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
     if not nick:
         raise HTTPException(status_code=404, detail="NickLive not found")
     result = moderator.save_curl(nick_live_id, payload.curl_text)
@@ -294,7 +354,16 @@ async def auto_reply_comments(
 
 
 @router.get("/{nick_live_id}/settings", response_model=NickLiveSettingsResponse)
-def get_nick_settings(nick_live_id: int, db: Session = Depends(get_db)):
+def get_nick_settings(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
+    if not nick:
+        raise HTTPException(status_code=404, detail="Nick not found")
     svc = SettingsService(db)
     row = svc.get_or_create_nick_settings(nick_live_id)
     return row
@@ -302,8 +371,16 @@ def get_nick_settings(nick_live_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{nick_live_id}/settings", response_model=NickLiveSettingsResponse)
 def update_nick_settings(
-    nick_live_id: int, payload: NickLiveSettingsUpdate, db: Session = Depends(get_db)
+    nick_live_id: int,
+    payload: NickLiveSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
+    if not nick:
+        raise HTTPException(status_code=404, detail="Nick not found")
     svc = SettingsService(db)
     try:
         row = svc.update_nick_settings(
@@ -330,9 +407,15 @@ def update_nick_settings(
 
 
 @router.post("/{nick_live_id}/host/get-credentials")
-async def host_get_credentials(nick_live_id: int, db: Session = Depends(get_db)):
+async def host_get_credentials(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Fetch usersig+uuid from relive.vn, save to host_config."""
-    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
     if not nick:
         raise HTTPException(status_code=404, detail="NickLive not found")
 
@@ -357,7 +440,11 @@ async def host_get_credentials(nick_live_id: int, db: Session = Depends(get_db))
 
 
 @router.get("/{nick_live_id}/host/status")
-def host_status(nick_live_id: int, db: Session = Depends(get_db)):
+def host_status(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Return host config status."""
     svc = SettingsService(db)
     config = svc.get_host_config(nick_live_id)
@@ -373,10 +460,15 @@ def host_status(nick_live_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{nick_live_id}/auto-post/start")
 async def auto_post_start(
-    nick_live_id: int, payload: AutoPostStartRequest, db: Session = Depends(get_db)
+    nick_live_id: int,
+    payload: AutoPostStartRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Start auto-post loop."""
-    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
     if not nick:
         raise HTTPException(status_code=404, detail="NickLive not found")
 
@@ -407,10 +499,15 @@ def auto_post_status(nick_live_id: int):
 
 @router.post("/{nick_live_id}/host/post")
 async def host_post(
-    nick_live_id: int, payload: HostPostRequest, db: Session = Depends(get_db)
+    nick_live_id: int,
+    payload: HostPostRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Manual host comment (type 101)."""
-    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
     if not nick:
         raise HTTPException(status_code=404, detail="NickLive not found")
 
@@ -430,11 +527,26 @@ async def host_post(
 # --- Per-nick auto-post template CRUD ---
 
 
+def _require_nick_ownership(nick_live_id: int, current_user: User, db: Session) -> NickLive:
+    """Return the nick if owned by current_user, else raise 404."""
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
+    if not nick:
+        raise HTTPException(status_code=404, detail="Nick not found")
+    return nick
+
+
 @router.get(
     "/{nick_live_id}/auto-post-templates",
     response_model=list[AutoPostTemplateResponse],
 )
-def list_nick_auto_post_templates(nick_live_id: int, db: Session = Depends(get_db)):
+def list_nick_auto_post_templates(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_nick_ownership(nick_live_id, current_user, db)
     svc = SettingsService(db)
     return svc.get_auto_post_templates_for_nick(nick_live_id)
 
@@ -444,8 +556,12 @@ def list_nick_auto_post_templates(nick_live_id: int, db: Session = Depends(get_d
     response_model=AutoPostTemplateResponse,
 )
 def create_nick_auto_post_template(
-    nick_live_id: int, payload: AutoPostTemplateCreate, db: Session = Depends(get_db)
+    nick_live_id: int,
+    payload: AutoPostTemplateCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_nick_ownership(nick_live_id, current_user, db)
     svc = SettingsService(db)
     return svc.create_auto_post_template_for_nick(
         nick_live_id,
@@ -464,7 +580,9 @@ def update_nick_auto_post_template(
     template_id: int,
     payload: AutoPostTemplateUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_nick_ownership(nick_live_id, current_user, db)
     svc = SettingsService(db)
     result = svc.update_auto_post_template(
         template_id,
@@ -479,8 +597,12 @@ def update_nick_auto_post_template(
 
 @router.delete("/{nick_live_id}/auto-post-templates/{template_id}")
 def delete_nick_auto_post_template(
-    nick_live_id: int, template_id: int, db: Session = Depends(get_db)
+    nick_live_id: int,
+    template_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_nick_ownership(nick_live_id, current_user, db)
     svc = SettingsService(db)
     if not svc.delete_auto_post_template_for_nick(nick_live_id, template_id):
         raise HTTPException(status_code=404, detail="Template not found")
@@ -494,7 +616,12 @@ def delete_nick_auto_post_template(
     "/{nick_live_id}/reply-templates",
     response_model=list[ReplyTemplateResponse],
 )
-def list_nick_reply_templates(nick_live_id: int, db: Session = Depends(get_db)):
+def list_nick_reply_templates(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_nick_ownership(nick_live_id, current_user, db)
     svc = SettingsService(db)
     return svc.get_reply_templates_for_nick(nick_live_id)
 
@@ -504,16 +631,24 @@ def list_nick_reply_templates(nick_live_id: int, db: Session = Depends(get_db)):
     response_model=ReplyTemplateResponse,
 )
 def create_nick_reply_template(
-    nick_live_id: int, payload: ReplyTemplateCreate, db: Session = Depends(get_db)
+    nick_live_id: int,
+    payload: ReplyTemplateCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_nick_ownership(nick_live_id, current_user, db)
     svc = SettingsService(db)
     return svc.create_reply_template_for_nick(nick_live_id, payload.content)
 
 
 @router.delete("/{nick_live_id}/reply-templates/{template_id}")
 def delete_nick_reply_template(
-    nick_live_id: int, template_id: int, db: Session = Depends(get_db)
+    nick_live_id: int,
+    template_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_nick_ownership(nick_live_id, current_user, db)
     svc = SettingsService(db)
     if not svc.delete_reply_template_for_nick(nick_live_id, template_id):
         raise HTTPException(status_code=404, detail="Template not found")

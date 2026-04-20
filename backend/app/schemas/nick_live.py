@@ -11,9 +11,22 @@ class UserPayload(BaseModel):
 
 
 class NickLiveCreate(BaseModel):
-    """User pastes JSON with user object + cookies string"""
+    """Create a new nick live.
 
-    user: UserPayload
+    Supports two forms:
+    - Flat: {"name": "...", "shopee_user_id": 123, "cookies": "..."}
+    - Nested: {"user": {"id": 123, "name": "..."}, "cookies": "..."}
+    """
+
+    # Flat fields (new preferred form)
+    name: str | None = Field(default=None, max_length=100)
+    shopee_user_id: int | None = None
+    shop_id: int | None = None
+    avatar: str | None = Field(default=None, max_length=500)
+
+    # Nested form (legacy)
+    user: UserPayload | None = None
+
     cookies: str = Field(min_length=1, max_length=20000)
 
 
