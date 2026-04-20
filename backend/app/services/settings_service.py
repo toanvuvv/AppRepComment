@@ -225,6 +225,9 @@ class SettingsService:
         auto_post_to_host: bool | None = None,
         auto_post_to_moderator: bool | None = None,
         host_proxy: str | None = None,
+        auto_pin_enabled: bool | None = None,
+        pin_min_interval_minutes: int | None = None,
+        pin_max_interval_minutes: int | None = None,
     ) -> NickLiveSetting:
         # Local imports to avoid cycles.
         from app.models.knowledge_product import KnowledgeProduct
@@ -289,6 +292,17 @@ class SettingsService:
             row.auto_post_to_moderator = auto_post_to_moderator
         if host_proxy is not None:
             row.host_proxy = host_proxy
+
+        if auto_pin_enabled is not None:
+            row.auto_pin_enabled = auto_pin_enabled
+        if pin_min_interval_minutes is not None:
+            row.pin_min_interval_minutes = pin_min_interval_minutes
+        if pin_max_interval_minutes is not None:
+            row.pin_max_interval_minutes = pin_max_interval_minutes
+
+        # Cross-field invariant guard.
+        if row.pin_min_interval_minutes > row.pin_max_interval_minutes:
+            raise ValueError("pin_min_interval_minutes phải <= pin_max_interval_minutes")
 
         self._db.commit()
         self._db.refresh(row)
