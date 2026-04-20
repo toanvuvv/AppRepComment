@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import REPLY_LOG_CLEANUP_INTERVAL_SEC, REPLY_LOG_RETENTION_HOURS
 from app.database import SessionLocal, init_db
 from app.models.reply_log import ReplyLog
+from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
 from app.routers.health import router as health_router
 from app.routers.knowledge import router as knowledge_router
@@ -111,6 +112,7 @@ app.add_middleware(
     allow_headers=["*", "X-API-Key"],
 )
 
+app.include_router(admin_router)
 app.include_router(auth_router)
 app.include_router(nick_live_router)
 app.include_router(settings_router)

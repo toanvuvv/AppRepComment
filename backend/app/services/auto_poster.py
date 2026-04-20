@@ -80,6 +80,14 @@ class AutoPoster:
                 task.cancel()
         self._template_index.clear()
 
+    def stop_user_nicks(self, user_id: int) -> None:
+        """Stop all auto-post loops for nicks owned by user_id. Implemented in Task 11."""
+        pass
+
+    def start_user_nicks(self, user_id: int) -> None:
+        """Re-start auto-post loops for nicks owned by user_id."""
+        pass
+
     async def _loop(self, nick_live_id: int, session_id: int, cookies: str) -> None:
         try:
             while True:

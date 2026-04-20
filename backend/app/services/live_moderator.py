@@ -516,5 +516,10 @@ class ShopeeLiveModerator:
         return {"success": False, "error": "rate_limited"}
 
 
+    def drop_user(self, user_id: int) -> None:
+        """Evict moderator cache entries for nicks owned by user_id. Implemented in Task 11."""
+        pass
+
+
 # Singleton instance
 moderator = ShopeeLiveModerator()
