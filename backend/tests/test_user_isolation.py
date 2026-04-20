@@ -48,3 +48,32 @@ def test_alice_cannot_see_bobs_nicks():
     r = client.get("/api/nick-lives", headers={"Authorization": f"Bearer {atok}"})
     assert r.status_code == 200
     assert all(n["name"] != "iso_bob_nick" for n in r.json())
+
+
+def test_alice_cannot_access_bobs_scan_endpoints():
+    atok = _login("iso_alice")
+    btok = _login("iso_bob")
+
+    # Bob creates a nick
+    r = client.post(
+        "/api/nick-lives",
+        headers={"Authorization": f"Bearer {btok}"},
+        json={"name": "iso_bob_nick2", "shopee_user_id": 1, "cookies": "c"},
+    )
+    assert r.status_code in (200, 201)
+    bob_nick_id = r.json()["id"]
+
+    # Alice should get 404 on every bob-owned endpoint
+    headers = {"Authorization": f"Bearer {atok}"}
+    assert client.get(f"/api/nick-lives/{bob_nick_id}/scan/status", headers=headers).status_code == 404
+    assert client.post(f"/api/nick-lives/{bob_nick_id}/scan/stop", headers=headers).status_code == 404
+    assert client.get(f"/api/nick-lives/{bob_nick_id}/comments", headers=headers).status_code == 404
+    assert client.get(f"/api/nick-lives/{bob_nick_id}/host/status", headers=headers).status_code == 404
+    assert client.get(f"/api/nick-lives/{bob_nick_id}/moderator/status", headers=headers).status_code == 404
+    assert client.delete(f"/api/nick-lives/{bob_nick_id}/moderator", headers=headers).status_code == 404
+    assert client.get(f"/api/nick-lives/{bob_nick_id}/auto-post/status", headers=headers).status_code == 404
+
+    # Unauthenticated should be 401
+    assert client.get(f"/api/nick-lives/{bob_nick_id}/scan/status").status_code == 401
+    assert client.post(f"/api/nick-lives/{bob_nick_id}/scan/stop").status_code == 401
+    assert client.get(f"/api/nick-lives/{bob_nick_id}/comments").status_code == 401

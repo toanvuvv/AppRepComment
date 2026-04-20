@@ -48,6 +48,16 @@ router = APIRouter(
 )
 
 
+def _owned_nick_or_404(db: Session, nick_live_id: int, user_id: int) -> NickLive:
+    """Return the NickLive if it belongs to user_id, else raise 404."""
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == user_id
+    ).first()
+    if not nick:
+        raise HTTPException(status_code=404, detail="Nick not found")
+    return nick
+
+
 @router.post("", response_model=NickLiveResponse)
 def create_nick_live(
     payload: NickLiveCreate,
@@ -227,25 +237,45 @@ async def start_scan(
 
 
 @router.post("/{nick_live_id}/scan/stop")
-def stop_scan(nick_live_id: int) -> dict:
+def stop_scan(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     scanner.stop(nick_live_id)
     return {"detail": "Scanning stopped"}
 
 
 @router.get("/{nick_live_id}/scan/status", response_model=ScanStatus)
-def scan_status(nick_live_id: int) -> ScanStatus:
+def scan_status(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ScanStatus:
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     status = scanner.get_status(nick_live_id)
     return ScanStatus(**status)
 
 
 @router.get("/{nick_live_id}/comments")
-def get_all_comments(nick_live_id: int) -> list:
+def get_all_comments(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list:
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     return scanner.get_comments(nick_live_id)
 
 
 @router.get("/{nick_live_id}/comments/stream")
-async def stream_comments(nick_live_id: int) -> EventSourceResponse:
+async def stream_comments(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EventSourceResponse:
     """SSE endpoint - streams new comments as they arrive."""
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
 
     async def event_generator():
         queue = scanner.subscribe(nick_live_id)
@@ -290,8 +320,13 @@ async def save_moderator_curl(
 
 
 @router.get("/{nick_live_id}/moderator/status", response_model=ModeratorStatus)
-async def get_moderator_status(nick_live_id: int) -> ModeratorStatus:
+async def get_moderator_status(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ModeratorStatus:
     """Check if moderator is configured for this nick_live."""
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     config = moderator.get_config(nick_live_id)
     return ModeratorStatus(
         nick_live_id=nick_live_id,
@@ -302,8 +337,13 @@ async def get_moderator_status(nick_live_id: int) -> ModeratorStatus:
 
 
 @router.delete("/{nick_live_id}/moderator")
-async def remove_moderator(nick_live_id: int) -> dict:
+async def remove_moderator(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """Remove moderator config for this nick_live."""
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     if moderator.remove_config(nick_live_id):
         return {"detail": "Removed"}
     raise HTTPException(status_code=404, detail="Moderator not configured")
@@ -311,9 +351,13 @@ async def remove_moderator(nick_live_id: int) -> dict:
 
 @router.post("/{nick_live_id}/moderator/reply")
 async def send_moderator_reply(
-    nick_live_id: int, payload: ModeratorReplyRequest
+    nick_live_id: int,
+    payload: ModeratorReplyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Send a single reply. Uses the active live session_id from scanner."""
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     if not moderator.has_config(nick_live_id):
         raise HTTPException(status_code=400, detail="Moderator not configured")
     scan_status = scanner.get_status(nick_live_id)
@@ -334,9 +378,13 @@ async def send_moderator_reply(
 
 @router.post("/{nick_live_id}/moderator/auto-reply")
 async def auto_reply_comments(
-    nick_live_id: int, payload: ModeratorAutoReplyRequest
+    nick_live_id: int,
+    payload: ModeratorAutoReplyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Auto-reply to multiple comments. Uses the active live session_id."""
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     if not moderator.has_config(nick_live_id):
         raise HTTPException(status_code=400, detail="Moderator not configured")
     scan_status = scanner.get_status(nick_live_id)
@@ -446,6 +494,7 @@ def host_status(
     current_user: User = Depends(get_current_user),
 ):
     """Return host config status."""
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     svc = SettingsService(db)
     config = svc.get_host_config(nick_live_id)
     return {
@@ -480,16 +529,26 @@ async def auto_post_start(
 
 
 @router.post("/{nick_live_id}/auto-post/stop")
-async def auto_post_stop(nick_live_id: int):
+async def auto_post_stop(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Stop auto-post loop."""
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     from app.main import auto_poster
     result = await auto_poster.stop(nick_live_id)
     return result
 
 
 @router.get("/{nick_live_id}/auto-post/status")
-def auto_post_status(nick_live_id: int):
+def auto_post_status(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Check if auto-post is running."""
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     from app.main import auto_poster
     return {"running": auto_poster.is_running(nick_live_id)}
 
