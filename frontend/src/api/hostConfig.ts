@@ -126,6 +126,26 @@ export async function getAutoPostStatus(
   return res.data;
 }
 
+// --- Auto-pin control ---
+
+export async function startAutoPin(
+  nickLiveId: number,
+  sessionId: string
+): Promise<void> {
+  await apiClient.post(`/nick-lives/${nickLiveId}/auto-pin/start`, { session_id: sessionId });
+}
+
+export async function stopAutoPin(nickLiveId: number): Promise<void> {
+  await apiClient.post(`/nick-lives/${nickLiveId}/auto-pin/stop`);
+}
+
+export async function getAutoPinStatus(
+  nickLiveId: number
+): Promise<{ running: boolean }> {
+  const res = await apiClient.get(`/nick-lives/${nickLiveId}/auto-pin/status`);
+  return res.data;
+}
+
 // --- Per-nick reply templates ---
 
 export async function getReplyTemplates(nickLiveId: number): Promise<ReplyTemplate[]> {
