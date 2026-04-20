@@ -262,7 +262,8 @@ def get_relive_key(
 ):
     svc = SettingsService(db, user_id=current_user.id)
     key = svc.get_setting("relive_api_key")
-    return {"api_key_set": bool(key), "api_key": key or ""}
+    # Never return the key value in plaintext; only signal whether it is set.
+    return {"api_key_set": bool(key)}
 
 
 @router.put("/relive-api-key")

@@ -116,7 +116,7 @@ export async function deleteAutoPostTemplate(id: number): Promise<void> {
 
 // --- Relive API key ---
 
-export async function getReliveApiKey(): Promise<{ api_key_set: boolean; api_key: string }> {
+export async function getReliveApiKey(): Promise<{ api_key_set: boolean }> {
   const res = await apiClient.get("/settings/relive-api-key");
   return res.data;
 }
