@@ -115,7 +115,7 @@ async def test_loop_picks_only_in_stock_and_calls_relive(pinner, monkeypatch):
     async def fast_sleep(_):
         return None  # interval 0
 
-    monkeypatch.setattr("app.services.auto_pinner.asyncio.sleep", fast_sleep)
+    monkeypatch.setattr("app.services.auto_pinner._sleep", fast_sleep)
     monkeypatch.setattr(
         "app.services.relive_service.pin_livestream_item", fake_pin
     )
@@ -125,8 +125,8 @@ async def test_loop_picks_only_in_stock_and_calls_relive(pinner, monkeypatch):
          patch.object(pinner, "_load_in_stock_products",
                       return_value=[(111, 222)]):
         task = asyncio.create_task(pinner._loop(1, 500, "cookies"))
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        for _ in range(5):
+            await asyncio.sleep(0)
         task.cancel()
         try:
             await task
@@ -152,7 +152,7 @@ async def test_loop_skips_when_no_in_stock(pinner, monkeypatch):
     async def fast_sleep(_):
         return None
 
-    monkeypatch.setattr("app.services.auto_pinner.asyncio.sleep", fast_sleep)
+    monkeypatch.setattr("app.services.auto_pinner._sleep", fast_sleep)
     monkeypatch.setattr(
         "app.services.relive_service.pin_livestream_item", fake_pin
     )
@@ -161,8 +161,8 @@ async def test_loop_skips_when_no_in_stock(pinner, monkeypatch):
          patch.object(pinner, "_load_api_key", return_value="KEY"), \
          patch.object(pinner, "_load_in_stock_products", return_value=[]):
         task = asyncio.create_task(pinner._loop(1, 500, "cookies"))
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        for _ in range(5):
+            await asyncio.sleep(0)
         task.cancel()
         try:
             await task
@@ -184,7 +184,7 @@ async def test_loop_swallows_relive_error(pinner, monkeypatch):
     async def fast_sleep(_):
         return None
 
-    monkeypatch.setattr("app.services.auto_pinner.asyncio.sleep", fast_sleep)
+    monkeypatch.setattr("app.services.auto_pinner._sleep", fast_sleep)
     monkeypatch.setattr(
         "app.services.relive_service.pin_livestream_item", fail_pin
     )
@@ -194,8 +194,8 @@ async def test_loop_swallows_relive_error(pinner, monkeypatch):
          patch.object(pinner, "_load_in_stock_products",
                       return_value=[(1, 2)]):
         task = asyncio.create_task(pinner._loop(1, 500, "cookies"))
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        for _ in range(5):
+            await asyncio.sleep(0)
         assert not task.done()
         task.cancel()
         try:

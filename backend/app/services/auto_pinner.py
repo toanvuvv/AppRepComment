@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 # synchronous stub).
 _real_sleep = asyncio.sleep
 
+# Module-level alias so tests can monkeypatch sleep without affecting
+# asyncio.sleep globally.
+_sleep = asyncio.sleep
+
 
 class AutoPinner:
     def __init__(self) -> None:
@@ -148,14 +152,14 @@ class AutoPinner:
                     settings, user_id = self._load_settings(nick_live_id)
                 except Exception:
                     logger.exception(f"Auto-pin nick={nick_live_id}: settings load failed")
-                    await asyncio.sleep(60)
+                    await _sleep(60)
                     continue
 
                 lo = max(1, int(settings.pin_min_interval_minutes)) * 60
                 hi = max(lo, int(settings.pin_max_interval_minutes) * 60)
                 interval = random.uniform(lo, hi)
                 logger.debug(f"Auto-pin nick={nick_live_id}: sleeping {interval:.0f}s")
-                await asyncio.sleep(interval)
+                await _sleep(interval)
 
                 products = self._load_in_stock_products(nick_live_id)
                 if not products:
