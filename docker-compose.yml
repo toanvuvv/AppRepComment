@@ -8,7 +8,10 @@ services:
     restart: unless-stopped
     environment:
       ENV: production
-      APP_API_KEY: ${APP_API_KEY:?APP_API_KEY must be set in .env}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      JWT_TTL_HOURS: ${JWT_TTL_HOURS:-8}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?ADMIN_USERNAME must be set in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set in .env}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY must be set in .env}
       DATABASE_URL: sqlite:////app/data/database.db
@@ -36,8 +39,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        VITE_APP_API_KEY: ${APP_API_KEY:?APP_API_KEY must be set in .env}
     image: app-rep-comment-frontend:latest
     container_name: arc-frontend
     restart: unless-stopped

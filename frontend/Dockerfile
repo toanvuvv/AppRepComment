@@ -3,11 +3,6 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Build-time API key injected into the bundle. Override at build:
-#   docker compose build --build-arg VITE_APP_API_KEY=xxx frontend
-ARG VITE_APP_API_KEY=""
-ENV VITE_APP_API_KEY=${VITE_APP_API_KEY}
-
 COPY package.json package-lock.json ./
 RUN npm ci
 
