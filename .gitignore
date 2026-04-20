@@ -76,3 +76,5 @@ logs/
 backend/database.db
 .gitnexus
 docker-compose.override.yml
+# Git worktrees
+.worktrees/
