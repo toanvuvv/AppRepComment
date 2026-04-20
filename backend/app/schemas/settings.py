@@ -1,7 +1,7 @@
 # backend/app/schemas/settings.py
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 ReplyMode = Literal["none", "knowledge", "ai", "template"]
 
@@ -63,6 +63,18 @@ class NickLiveSettingsUpdate(BaseModel):
     auto_post_to_moderator: bool | None = None
     host_proxy: str | None = None
 
+    # Auto-pin fields
+    auto_pin_enabled: bool | None = None
+    pin_min_interval_minutes: int | None = Field(default=None, ge=1, le=60)
+    pin_max_interval_minutes: int | None = Field(default=None, ge=1, le=60)
+
+    @model_validator(mode="after")
+    def _check_pin_interval(self):
+        lo, hi = self.pin_min_interval_minutes, self.pin_max_interval_minutes
+        if lo is not None and hi is not None and lo > hi:
+            raise ValueError("pin_min_interval_minutes phải <= pin_max_interval_minutes")
+        return self
+
 
 class NickLiveSettingsResponse(BaseModel):
     nick_live_id: int
@@ -72,6 +84,9 @@ class NickLiveSettingsResponse(BaseModel):
     auto_post_enabled: bool
     auto_post_to_host: bool
     auto_post_to_moderator: bool
+    auto_pin_enabled: bool
+    pin_min_interval_minutes: int
+    pin_max_interval_minutes: int
     model_config = {"from_attributes": True}
 
 
@@ -129,3 +144,7 @@ class BannedWordsUpdate(BaseModel):
 
 class BannedWordsResponse(BaseModel):
     words: list[str]
+
+
+class AutoPinStartRequest(BaseModel):
+    session_id: int = Field(gt=0)
