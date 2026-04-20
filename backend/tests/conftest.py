@@ -27,3 +27,14 @@ def _restore_app_database():
         importlib.reload(app.database)
     except Exception:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Reset slowapi in-memory counters between tests to prevent 429 bleed-through."""
+    try:
+        from app.rate_limit import limiter
+        limiter.reset()
+    except Exception:
+        pass
+    yield

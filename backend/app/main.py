@@ -6,6 +6,9 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import REPLY_LOG_CLEANUP_INTERVAL_SEC, REPLY_LOG_RETENTION_HOURS
 from app.database import SessionLocal, init_db
@@ -103,6 +106,20 @@ app = FastAPI(
     docs_url="/docs" if is_dev else None,
     redoc_url="/redoc" if is_dev else None,
 )
+
+from app.rate_limit import limiter
+
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+
+@app.exception_handler(RateLimitExceeded)
+def _rate_limit_handler(request, exc):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many attempts, try again later"},
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
