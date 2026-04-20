@@ -1,16 +1,28 @@
 import { Routes, Route } from "react-router-dom";
 import AppLayout from "./components/Layout";
+import ProtectedRoute from "./components/ProtectedRoute";
+import AdminRoute from "./components/AdminRoute";
+import Login from "./pages/Login";
 import Home from "./pages/Home";
 import LiveScan from "./pages/LiveScan";
 import Settings from "./pages/Settings";
+import ChangePassword from "./pages/ChangePassword";
+import AdminUsers from "./pages/AdminUsers";
 
 function App() {
   return (
     <Routes>
-      <Route element={<AppLayout />}>
-        <Route path="/" element={<Home />} />
-        <Route path="/live-scan" element={<LiveScan />} />
-        <Route path="/settings" element={<Settings />} />
+      <Route path="/login" element={<Login />} />
+      <Route element={<ProtectedRoute />}>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Home />} />
+          <Route path="/live-scan" element={<LiveScan />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/change-password" element={<ChangePassword />} />
+          <Route element={<AdminRoute />}>
+            <Route path="/admin/users" element={<AdminUsers />} />
+          </Route>
+        </Route>
       </Route>
     </Routes>
   );
