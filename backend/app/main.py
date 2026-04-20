@@ -23,8 +23,9 @@ from app.routers.settings import router as settings_router
 
 logger = logging.getLogger(__name__)
 
-# Module-level reference; initialised inside lifespan().
+# Module-level references; initialised inside lifespan().
 auto_poster: "AutoPoster | None" = None  # noqa: F821
+auto_pinner: "AutoPinner | None" = None  # noqa: F821
 
 
 def _delete_logs_before(cutoff: datetime) -> int:
@@ -64,6 +65,11 @@ async def lifespan(app: FastAPI):
     from app.services.auto_poster import AutoPoster
     global auto_poster
     auto_poster = AutoPoster(moderator)
+
+    # Initialise auto-pinner
+    from app.services.auto_pinner import AutoPinner
+    global auto_pinner
+    auto_pinner = AutoPinner()
 
     # Start reply log writer background task
     from app.services.reply_log_writer import reply_log_writer

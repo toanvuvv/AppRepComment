@@ -27,6 +27,7 @@ from app.schemas.nick_live import (
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.schemas.settings import (
+    AutoPinStartRequest,
     AutoPostTemplateCreate,
     AutoPostTemplateResponse,
     AutoPostTemplateUpdate,
@@ -440,6 +441,9 @@ def update_nick_settings(
             auto_post_to_host=payload.auto_post_to_host,
             auto_post_to_moderator=payload.auto_post_to_moderator,
             host_proxy=payload.host_proxy,
+            auto_pin_enabled=payload.auto_pin_enabled,
+            pin_min_interval_minutes=payload.pin_min_interval_minutes,
+            pin_max_interval_minutes=payload.pin_max_interval_minutes,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -551,6 +555,60 @@ def auto_post_status(
     _owned_nick_or_404(db, nick_live_id, current_user.id)
     from app.main import auto_poster
     return {"running": auto_poster.is_running(nick_live_id)}
+
+
+# --- Auto-pin control ---
+
+
+@router.post("/{nick_live_id}/auto-pin/start")
+async def auto_pin_start(
+    nick_live_id: int,
+    payload: AutoPinStartRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Start auto-pin loop for this nick."""
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+    ).first()
+    if not nick:
+        raise HTTPException(status_code=404, detail="NickLive not found")
+
+    from app.main import auto_pinner
+    if auto_pinner is None:
+        raise HTTPException(status_code=503, detail="Auto-pin service not ready")
+
+    result = await auto_pinner.start(nick_live_id, payload.session_id, nick.cookies)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/{nick_live_id}/auto-pin/stop")
+async def auto_pin_stop(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Stop auto-pin loop for this nick."""
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
+    from app.main import auto_pinner
+    if auto_pinner is None:
+        return {"status": "not_running"}
+    return await auto_pinner.stop(nick_live_id)
+
+
+@router.get("/{nick_live_id}/auto-pin/status")
+def auto_pin_status(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Check if auto-pin is running."""
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
+    from app.main import auto_pinner
+    running = auto_pinner.is_running(nick_live_id) if auto_pinner is not None else False
+    return {"running": running}
 
 
 # --- Manual host comment ---
