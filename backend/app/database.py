@@ -82,6 +82,21 @@ def _migrate_add_columns() -> None:
             "auto_post_to_moderator",
             "ALTER TABLE nick_live_settings ADD COLUMN auto_post_to_moderator BOOLEAN NOT NULL DEFAULT 0",
         ),
+        (
+            "nick_live_settings",
+            "auto_pin_enabled",
+            "ALTER TABLE nick_live_settings ADD COLUMN auto_pin_enabled BOOLEAN NOT NULL DEFAULT 0",
+        ),
+        (
+            "nick_live_settings",
+            "pin_min_interval_minutes",
+            "ALTER TABLE nick_live_settings ADD COLUMN pin_min_interval_minutes INTEGER NOT NULL DEFAULT 2",
+        ),
+        (
+            "nick_live_settings",
+            "pin_max_interval_minutes",
+            "ALTER TABLE nick_live_settings ADD COLUMN pin_max_interval_minutes INTEGER NOT NULL DEFAULT 5",
+        ),
     ]
 
     for table, column, sql in migrations:

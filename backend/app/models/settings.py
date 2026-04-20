@@ -71,6 +71,11 @@ class NickLiveSetting(Base):
     auto_post_to_host: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auto_post_to_moderator: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # --- Auto-pin config ---
+    auto_pin_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pin_min_interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    pin_max_interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+
     # --- Credentials ---
     moderator_config: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
     host_config: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
