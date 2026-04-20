@@ -75,3 +75,4 @@ logs/
 *.db-journal
 backend/database.db
 .gitnexus
+docker-compose.override.yml
