@@ -34,6 +34,9 @@ export interface NickLiveSettings {
   auto_post_enabled: boolean;
   auto_post_to_host: boolean;
   auto_post_to_moderator: boolean;
+  auto_pin_enabled: boolean;
+  pin_min_interval_minutes: number;
+  pin_max_interval_minutes: number;
 }
 
 export interface NickLiveSettingsUpdate {
@@ -44,6 +47,9 @@ export interface NickLiveSettingsUpdate {
   auto_post_to_host?: boolean;
   auto_post_to_moderator?: boolean;
   host_proxy?: string;
+  auto_pin_enabled?: boolean;
+  pin_min_interval_minutes?: number;
+  pin_max_interval_minutes?: number;
 }
 
 // --- Host credentials ---

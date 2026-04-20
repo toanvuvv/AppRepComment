@@ -36,6 +36,9 @@ import {
   startAutoPost,
   stopAutoPost,
   getAutoPostStatus,
+  startAutoPin,
+  stopAutoPin,
+  getAutoPinStatus,
   getReplyTemplates,
   createReplyTemplate,
   deleteReplyTemplate,
@@ -92,6 +95,12 @@ export default function NickConfigModal({
   const [newPostMax, setNewPostMax] = useState(60);
   const [autoPostRunning, setAutoPostRunning] = useState(false);
 
+  // --- Auto-pin state ---
+  const [autoPinEnabled, setAutoPinEnabled] = useState(false);
+  const [pinMinMinutes, setPinMinMinutes] = useState(5);
+  const [pinMaxMinutes, setPinMaxMinutes] = useState(15);
+  const [pinRunning, setPinRunning] = useState(false);
+
   // --- Reply config state ---
   const [replyTemplates, setReplyTemplates] = useState<ReplyTemplate[]>([]);
   const [newReplyContent, setNewReplyContent] = useState("");
@@ -115,18 +124,39 @@ export default function NickConfigModal({
   useEffect(() => {
     if (!open) return;
 
+    // Reset per-nick state immediately to prevent showing the previous nick's
+    // data while the new fetch is in flight.
+    setHostStatus(null);
+    setProxy("");
+    setAutoPostTemplates([]);
+    setReplyTemplates([]);
+    setSettings(null);
+    setAutoPostRunning(false);
+    setAutoPinEnabled(false);
+    setPinMinMinutes(5);
+    setPinMaxMinutes(15);
+    setPinRunning(false);
+    setModStatus(null);
+    setProducts([]);
+
+    let cancelled = false;
+    const targetNickId = nickLiveId;
+
     const load = async () => {
       try {
         const [host, templates, replies, nickSettings, autoStatus, mod, kps] =
           await Promise.all([
-            getHostStatus(nickLiveId),
-            getAutoPostTemplates(nickLiveId),
-            getReplyTemplates(nickLiveId),
-            getNickSettings(nickLiveId),
-            getAutoPostStatus(nickLiveId),
-            getModeratorStatus(nickLiveId),
-            getKnowledgeProducts(nickLiveId),
+            getHostStatus(targetNickId),
+            getAutoPostTemplates(targetNickId),
+            getReplyTemplates(targetNickId),
+            getNickSettings(targetNickId),
+            getAutoPostStatus(targetNickId),
+            getModeratorStatus(targetNickId),
+            getKnowledgeProducts(targetNickId),
           ]);
+
+        // Guard against stale responses if the nick switched mid-flight.
+        if (cancelled || targetNickId !== nickLiveId) return;
 
         setHostStatus(host);
         setProxy(host.proxy ?? "");
@@ -134,14 +164,20 @@ export default function NickConfigModal({
         setReplyTemplates(replies);
         setSettings(nickSettings);
         setAutoPostRunning(autoStatus.running);
+        setAutoPinEnabled(nickSettings.auto_pin_enabled ?? false);
+        setPinMinMinutes(nickSettings.pin_min_interval_minutes ?? 5);
+        setPinMaxMinutes(nickSettings.pin_max_interval_minutes ?? 15);
         setModStatus(mod);
         setProducts(kps);
       } catch {
-        message.error("Failed to load nick configuration");
+        if (!cancelled) message.error("Failed to load nick configuration");
       }
     };
 
     load();
+    return () => {
+      cancelled = true;
+    };
   }, [open, nickLiveId]);
 
   // --- Cleanup debounce timers ---
@@ -242,6 +278,49 @@ export default function NickConfigModal({
       message.success("Auto-post stopped");
     } catch {
       message.error("Failed to stop auto-post");
+    }
+  }, [nickLiveId]);
+
+  // --- Auto-pin polling ---
+  useEffect(() => {
+    if (!open) return;
+    const poll = async () => {
+      try {
+        const status = await getAutoPinStatus(nickLiveId);
+        setPinRunning(status.running);
+      } catch {
+        // ignore polling errors silently
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [open, nickLiveId]);
+
+  // --- Auto-pin handlers ---
+  const handleStartPin = useCallback(async () => {
+    if (!sessionId) {
+      message.warning("No active session");
+      return;
+    }
+    try {
+      await startAutoPin(nickLiveId, String(sessionId));
+      setPinRunning(true);
+      message.success("Auto-pin started");
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail;
+      message.error(detail || "Failed to start auto-pin");
+    }
+  }, [nickLiveId, sessionId]);
+
+  const handleStopPin = useCallback(async () => {
+    try {
+      await stopAutoPin(nickLiveId);
+      setPinRunning(false);
+      message.success("Auto-pin stopped");
+    } catch {
+      message.error("Failed to stop auto-pin");
     }
   }, [nickLiveId]);
 
@@ -513,6 +592,87 @@ export default function NickConfigModal({
       ),
     },
     {
+      key: "autopin",
+      label: "Auto-pin",
+      children: (
+        <Space direction="vertical" style={{ width: "100%" }} size="middle">
+          <Space align="center">
+            <Text strong>Auto-pin enabled:</Text>
+            <Switch
+              checked={autoPinEnabled}
+              onChange={(val) => {
+                setAutoPinEnabled(val);
+                handleUpdateSettings({ auto_pin_enabled: val });
+              }}
+            />
+          </Space>
+
+          <Space align="center">
+            <Text>Min:</Text>
+            <InputNumber
+              min={1}
+              max={60}
+              value={pinMinMinutes}
+              onChange={(v) => setPinMinMinutes(v ?? 5)}
+              style={{ width: 80 }}
+            />
+            <Text>phút</Text>
+            <Text>Max:</Text>
+            <InputNumber
+              min={1}
+              max={60}
+              value={pinMaxMinutes}
+              onChange={(v) => setPinMaxMinutes(v ?? 15)}
+              style={{ width: 80 }}
+            />
+            <Text>phút</Text>
+            <Button
+              size="small"
+              onClick={() =>
+                handleUpdateSettings({
+                  pin_min_interval_minutes: pinMinMinutes,
+                  pin_max_interval_minutes: pinMaxMinutes,
+                })
+              }
+              disabled={pinMinMinutes > pinMaxMinutes}
+            >
+              Lưu
+            </Button>
+          </Space>
+
+          {pinMinMinutes > pinMaxMinutes && (
+            <Text type="danger">Min phải nhỏ hơn hoặc bằng Max</Text>
+          )}
+
+          <Space align="center">
+            <Text>Trạng thái:</Text>
+            <Tag color={pinRunning ? "green" : "default"}>
+              {pinRunning ? "● Đang chạy" : "○ Đã dừng"}
+            </Tag>
+          </Space>
+
+          <Space>
+            <Button
+              type="primary"
+              icon={<PlayCircleOutlined />}
+              disabled={!autoPinEnabled || pinRunning || pinMinMinutes > pinMaxMinutes}
+              onClick={handleStartPin}
+            >
+              Bắt đầu Pin
+            </Button>
+            <Button
+              danger
+              icon={<PauseCircleOutlined />}
+              disabled={!pinRunning}
+              onClick={handleStopPin}
+            >
+              Dừng Pin
+            </Button>
+          </Space>
+        </Space>
+      ),
+    },
+    {
       key: "reply",
       label: "Reply Config",
       children: (
@@ -630,6 +790,31 @@ export default function NickConfigModal({
           { title: "#", dataIndex: "product_order", width: 50 },
           { title: "Tên", dataIndex: "name", ellipsis: true, width: 220 },
           {
+            title: "Item ID",
+            dataIndex: "item_id",
+            width: 130,
+            render: (val: number, r: KnowledgeProduct) => (
+              <a
+                href={`https://shopee.vn/product/${r.shop_id}/${val}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontFamily: "monospace", fontSize: 12 }}
+              >
+                {val}
+              </a>
+            ),
+          },
+          {
+            title: "Shop ID",
+            dataIndex: "shop_id",
+            width: 110,
+            render: (val: number) => (
+              <Text copyable style={{ fontFamily: "monospace", fontSize: 12 }}>
+                {val}
+              </Text>
+            ),
+          },
+          {
             title: "Keywords",
             dataIndex: "keywords",
             width: 180,
@@ -729,7 +914,7 @@ export default function NickConfigModal({
                 rowKey="pk"
                 size="small"
                 pagination={false}
-                scroll={{ x: 800, y: 400 }}
+                scroll={{ x: 1050, y: 400 }}
               />
             )}
           </Space>
