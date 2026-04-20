@@ -69,6 +69,14 @@ export async function deleteNickLive(id: number): Promise<void> {
   await apiClient.delete(`/nick-lives/${id}`);
 }
 
+export async function updateNickLiveCookies(
+  id: number,
+  data: { cookies: string; user?: Record<string, unknown> }
+): Promise<NickLive> {
+  const res = await apiClient.patch(`/nick-lives/${id}/cookies`, data);
+  return res.data;
+}
+
 export async function getSessions(
   id: number
 ): Promise<LiveSessionsResponse> {

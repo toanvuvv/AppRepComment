@@ -31,6 +31,17 @@ export async function importKnowledgeProducts(
   return res.data;
 }
 
+export async function parseKnowledgeProducts(
+  nickLiveId: number,
+  sessionId: number
+): Promise<KnowledgeProduct[]> {
+  const res = await apiClient.post(
+    `/nick-lives/${nickLiveId}/knowledge/parse`,
+    { session_id: sessionId }
+  );
+  return res.data;
+}
+
 export async function getKnowledgeProducts(
   nickLiveId: number
 ): Promise<KnowledgeProduct[]> {

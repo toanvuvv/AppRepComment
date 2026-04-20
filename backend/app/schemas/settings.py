@@ -82,6 +82,10 @@ class KnowledgeProductImportRequest(BaseModel):
     raw_json: str = Field(min_length=10)
 
 
+class KnowledgeProductParseRequest(BaseModel):
+    session_id: int = Field(gt=0)
+
+
 class KnowledgeProductResponse(BaseModel):
     pk: int
     product_order: int

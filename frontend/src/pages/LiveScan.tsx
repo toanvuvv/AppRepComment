@@ -15,8 +15,6 @@ import {
   Popconfirm,
   message,
   Divider,
-  Switch,
-  Select,
   Modal,
 } from "antd";
 import {
@@ -24,10 +22,9 @@ import {
   DeleteOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
-  InfoCircleOutlined,
-  DatabaseOutlined,
   FileTextOutlined,
   SettingOutlined,
+  EditOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useReplyLogs } from "../hooks/useReplyLogs";
@@ -36,29 +33,15 @@ import {
   type NickLive,
   type LiveSession,
   type CommentItem,
-  type ModeratorStatus,
-  type ModeratorReplyResult,
   listNickLives,
   createNickLive,
   deleteNickLive,
+  updateNickLiveCookies,
   getSessions,
   startScan,
   stopScan,
   getScanStatus,
-  saveModeratorCurl,
-  getModeratorStatus,
-  removeModerator,
-  sendModeratorReply,
-  autoReplyComments,
 } from "../api/nickLive";
-import {
-  type NickLiveSettings,
-  type NickLiveSettingsUpdate,
-  type ReplyMode,
-  getNickLiveSettings,
-  updateNickLiveSettings,
-} from "../api/settings";
-import KnowledgeProductsCard from "../components/KnowledgeProductsCard";
 import CommentFeed from "../components/CommentFeed";
 import NickConfigModal from "../components/NickConfigModal";
 
@@ -71,27 +54,12 @@ function formatDateTime(ts?: number): string {
   return new Date(ms).toLocaleString("vi-VN");
 }
 
-function getDisplayName(c: CommentItem): string {
-  return c.userName || c.username || c.nick_name || c.nickname || "Unknown";
-}
-
-function getCommentText(c: CommentItem): string {
-  return c.content || c.comment || c.message || c.msg || "";
-}
-
 const OUTCOME_COLOR: Record<ReplyOutcome, string> = {
   success: "green",
   failed: "red",
   dropped: "orange",
   circuit_open: "volcano",
   no_config: "default",
-};
-
-const REPLY_MODE_LABEL: Record<ReplyMode, string> = {
-  none: "None",
-  knowledge: "Knowledge AI",
-  ai: "AI thường",
-  template: "Template",
 };
 
 const OUTCOME_LABEL: Record<ReplyOutcome, string> = {
@@ -163,21 +131,16 @@ function LiveScan() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
 
-  // Moderator state
-  const [curlInput, setCurlInput] = useState("");
-  const [curlLoading, setCurlLoading] = useState(false);
-  const [modStatus, setModStatus] = useState<ModeratorStatus | null>(null);
-  const [replyText, setReplyText] = useState("");
-  const [replyLoading, setReplyLoading] = useState(false);
-  const [replyResults, setReplyResults] = useState<ModeratorReplyResult[]>([]);
-  const [nickSettings, setNickSettings] = useState<NickLiveSettings | null>(null);
-  const [settingsLoading, setSettingsLoading] = useState(false);
-
   // Nick config modal
   const [configNick, setConfigNick] = useState<{ id: number; name: string } | null>(null);
 
-  // Knowledge Products modal
-  const [knowledgeModalOpen, setKnowledgeModalOpen] = useState(false);
+  // Update cookies modal
+  const [editCookiesNick, setEditCookiesNick] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+  const [editCookiesJson, setEditCookiesJson] = useState("");
+  const [editCookiesLoading, setEditCookiesLoading] = useState(false);
 
   // Reply Logs modal
   const [replyLogsModalOpen, setReplyLogsModalOpen] = useState(false);
@@ -287,6 +250,42 @@ function LiveScan() {
     [selectedId, loadNickLives]
   );
 
+  const handleUpdateCookies = useCallback(async () => {
+    if (!editCookiesNick) return;
+    const raw = editCookiesJson.trim();
+    if (!raw) {
+      message.error("Vui lòng nhập cookies hoặc JSON");
+      return;
+    }
+    let payload: { cookies: string; user?: Record<string, unknown> };
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && "cookies" in parsed) {
+        if (!parsed.cookies) {
+          message.error("JSON phải có trường 'cookies'");
+          return;
+        }
+        payload = { cookies: parsed.cookies, user: parsed.user };
+      } else {
+        payload = { cookies: raw };
+      }
+    } catch {
+      payload = { cookies: raw };
+    }
+    setEditCookiesLoading(true);
+    try {
+      await updateNickLiveCookies(editCookiesNick.id, payload);
+      message.success("Đã cập nhật cookies");
+      setEditCookiesNick(null);
+      setEditCookiesJson("");
+      await loadNickLives();
+    } catch {
+      message.error("Không thể cập nhật cookies");
+    } finally {
+      setEditCookiesLoading(false);
+    }
+  }, [editCookiesNick, editCookiesJson, loadNickLives]);
+
   const handleCheckSessions = useCallback(async () => {
     if (!selectedId) return;
     setSessionsLoading(true);
@@ -329,132 +328,6 @@ function LiveScan() {
       message.error("Không thể dừng quét");
     }
   }, [selectedId]);
-
-  // --- Moderator handlers ---
-
-  const loadModStatus = useCallback(async () => {
-    if (!selectedId) return;
-    try {
-      const status = await getModeratorStatus(selectedId);
-      setModStatus(status);
-    } catch {
-      setModStatus(null);
-    }
-  }, [selectedId]);
-
-  const loadNickSettings = useCallback(async () => {
-    if (!selectedId) return;
-    try {
-      const s = await getNickLiveSettings(selectedId);
-      setNickSettings(s);
-    } catch {
-      setNickSettings(null);
-    }
-  }, [selectedId]);
-
-  useEffect(() => {
-    if (selectedId) {
-      loadModStatus();
-      loadNickSettings();
-    } else {
-      setModStatus(null);
-      setNickSettings(null);
-    }
-  }, [selectedId, loadModStatus, loadNickSettings]);
-
-  const handleUpdateNickSettings = useCallback(
-    async (patch: NickLiveSettingsUpdate) => {
-      if (!selectedId) return;
-      setSettingsLoading(true);
-      try {
-        const updated = await updateNickLiveSettings(selectedId, patch);
-        setNickSettings(updated);
-        message.success("Đã cập nhật");
-      } catch (err: unknown) {
-        const detail = (err as { response?: { data?: { detail?: string } } })
-          ?.response?.data?.detail;
-        message.error(detail || "Cập nhật thất bại");
-      } finally {
-        setSettingsLoading(false);
-      }
-    },
-    [selectedId]
-  );
-
-  const handleSaveCurl = useCallback(async () => {
-    if (!selectedId || !curlInput.trim()) {
-      message.error("Vui lòng dán cURL moderator");
-      return;
-    }
-    setCurlLoading(true);
-    try {
-      await saveModeratorCurl(selectedId, curlInput);
-      message.success("Lưu cURL moderator thành công");
-      setCurlInput("");
-      await loadModStatus();
-    } catch {
-      message.error("Không thể parse cURL");
-    } finally {
-      setCurlLoading(false);
-    }
-  }, [selectedId, curlInput, loadModStatus]);
-
-  const handleRemoveModerator = useCallback(async () => {
-    if (!selectedId) return;
-    try {
-      await removeModerator(selectedId);
-      message.success("Đã xóa moderator");
-      await loadModStatus();
-    } catch {
-      message.error("Không thể xóa moderator");
-    }
-  }, [selectedId, loadModStatus]);
-
-  const handleSendReply = useCallback(
-    async (comment: CommentItem) => {
-      if (!selectedId || !replyText.trim()) {
-        message.error("Nhập nội dung reply");
-        return;
-      }
-      const guestName = getDisplayName(comment);
-      const guestId = comment.streamerId || comment.userId || comment.user_id || comment.uid || 0;
-      setReplyLoading(true);
-      try {
-        const result = await sendModeratorReply(selectedId, guestName, guestId, replyText);
-        if (result.success) {
-          message.success(`Đã reply @${guestName}`);
-        } else {
-          message.error(`Reply thất bại: ${result.error || result.response || "Unknown error"}`);
-        }
-        setReplyResults((prev) => [...prev, result].slice(-100));
-      } catch (err: unknown) {
-        const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-        message.error(detail || "Không thể gửi reply");
-      } finally {
-        setReplyLoading(false);
-      }
-    },
-    [selectedId, replyText]
-  );
-
-  const handleAutoReply = useCallback(async () => {
-    const currentComments = commentsRef.current;
-    if (!selectedId || !replyText.trim() || currentComments.length === 0) {
-      message.error("Cần nội dung reply và comments");
-      return;
-    }
-    setReplyLoading(true);
-    try {
-      const results = await autoReplyComments(selectedId, currentComments, replyText);
-      const successCount = results.filter((r) => r.success).length;
-      message.success(`Đã reply ${successCount}/${results.length} comment`);
-      setReplyResults(results);
-    } catch {
-      message.error("Auto reply thất bại");
-    } finally {
-      setReplyLoading(false);
-    }
-  }, [selectedId, replyText]);
 
   const sessionColumns: ColumnsType<LiveSession> = [
     { title: "Session ID", dataIndex: "sessionId", key: "sessionId", width: 100 },
@@ -517,8 +390,6 @@ function LiveScan() {
                     setSessions([]);
                     setActiveSession(null);
                     setIsScanning(false);
-                    setModStatus(null);
-                    setReplyResults([]);
                   }}
                   style={{
                     border:
@@ -534,6 +405,17 @@ function LiveScan() {
                       onClick={(e) => {
                         e.stopPropagation();
                         setConfigNick({ id: nl.id, name: nl.name });
+                      }}
+                    />,
+                    <Button
+                      key="edit-cookies"
+                      size="small"
+                      icon={<EditOutlined />}
+                      title="Cập nhật cookies"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditCookiesNick({ id: nl.id, name: nl.name });
+                        setEditCookiesJson("");
                       }}
                     />,
                     <Popconfirm
@@ -741,257 +623,33 @@ function LiveScan() {
         </div>
       </Modal>
 
-      {/* Section 5: Moderator - only when nick selected */}
-      {selectedId && (
-        <>
-          <Divider />
-          <Title level={4}>Moderator - Reply Comment</Title>
+      {/* Update Cookies Modal */}
+      <Modal
+        title={`Cập nhật cookies — ${editCookiesNick?.name ?? ""}`}
+        open={!!editCookiesNick}
+        onCancel={() => {
+          setEditCookiesNick(null);
+          setEditCookiesJson("");
+        }}
+        onOk={handleUpdateCookies}
+        confirmLoading={editCookiesLoading}
+        okText="Cập nhật"
+        cancelText="Hủy"
+      >
+        <Text type="secondary">
+          Dán cookies mới (chuỗi thuần) hoặc JSON dạng{" "}
+          <code>{`{"user":{...},"cookies":"..."}`}</code>. Nếu đang quét,
+          scanner sẽ tự khởi động lại với cookies mới.
+        </Text>
+        <TextArea
+          rows={6}
+          value={editCookiesJson}
+          onChange={(e) => setEditCookiesJson(e.target.value)}
+          placeholder="Cookies mới hoặc JSON"
+          style={{ marginTop: 8 }}
+        />
+      </Modal>
 
-          {!activeSession ? (
-            <Alert
-              type="warning"
-              message="Không có phiên live đang hoạt động"
-              description="Cần có phiên live đang hoạt động để sử dụng moderator. Hãy kiểm tra phiên live trước."
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-          ) : (
-            <>
-              {/* Save cURL */}
-              <Card
-                title="Lưu cURL Moderator"
-                style={{ marginBottom: 16 }}
-                extra={
-                  modStatus?.configured ? (
-                    <Space>
-                      <Tag color="green">Đã cấu hình</Tag>
-                      <Tag>Host: {modStatus.host_id || "N/A"}</Tag>
-                      <Popconfirm title="Xóa moderator?" onConfirm={handleRemoveModerator}>
-                        <Button type="text" danger icon={<DeleteOutlined />} size="small">
-                          Xóa
-                        </Button>
-                      </Popconfirm>
-                    </Space>
-                  ) : (
-                    <Tag color="red">Chưa cấu hình</Tag>
-                  )
-                }
-              >
-                <TextArea
-                  rows={4}
-                  placeholder="Dán cURL moderator vào đây (curl https://live.shopee.vn/api/v1/session/.../message ...)"
-                  value={curlInput}
-                  onChange={(e) => setCurlInput(e.target.value)}
-                />
-                <Button
-                  type="primary"
-                  onClick={handleSaveCurl}
-                  loading={curlLoading}
-                  style={{ marginTop: 8 }}
-                >
-                  {modStatus?.configured ? "Cập nhật cURL" : "Lưu cURL"}
-                </Button>
-              </Card>
-
-              {/* Automation Settings Card */}
-              {modStatus?.configured && (
-                <Card title="Cài đặt tự động" style={{ marginBottom: 16 }}>
-                  <Space direction="vertical" style={{ width: "100%" }} size="middle">
-                    <Space align="center">
-                      <Text strong>Chế độ reply:</Text>
-                      <Select<ReplyMode>
-                        style={{ width: 220 }}
-                        value={nickSettings?.reply_mode ?? "none"}
-                        onChange={(v) => handleUpdateNickSettings({ reply_mode: v })}
-                        loading={settingsLoading}
-                        options={[
-                          { value: "none", label: "None (tắt)" },
-                          { value: "knowledge", label: "Knowledge AI" },
-                          { value: "ai", label: "AI thường" },
-                          { value: "template", label: "Template" },
-                        ]}
-                      />
-                      {!isScanning && (
-                        <Tag icon={<InfoCircleOutlined />} color="warning">
-                          Cần đang quét
-                        </Tag>
-                      )}
-                    </Space>
-                    <Space>
-                      <Text>Reply qua Host:</Text>
-                      <Switch
-                        checked={nickSettings?.reply_to_host ?? false}
-                        onChange={(v) => handleUpdateNickSettings({ reply_to_host: v })}
-                        loading={settingsLoading}
-                      />
-                      <Text>Reply qua Moderator:</Text>
-                      <Switch
-                        checked={nickSettings?.reply_to_moderator ?? false}
-                        onChange={(v) => handleUpdateNickSettings({ reply_to_moderator: v })}
-                        loading={settingsLoading}
-                      />
-                    </Space>
-
-                    <Divider style={{ margin: "8px 0" }} />
-
-                    <Space>
-                      <Switch
-                        checked={nickSettings?.auto_post_enabled ?? false}
-                        onChange={(v) => handleUpdateNickSettings({ auto_post_enabled: v })}
-                        loading={settingsLoading}
-                      />
-                      <Text strong>Bật Auto-post (đăng comment theo lịch)</Text>
-                    </Space>
-                    <Space>
-                      <Text>Auto-post qua Host:</Text>
-                      <Switch
-                        checked={nickSettings?.auto_post_to_host ?? false}
-                        onChange={(v) => handleUpdateNickSettings({ auto_post_to_host: v })}
-                        loading={settingsLoading}
-                      />
-                      <Text>Auto-post qua Moderator:</Text>
-                      <Switch
-                        checked={nickSettings?.auto_post_to_moderator ?? false}
-                        onChange={(v) => handleUpdateNickSettings({ auto_post_to_moderator: v })}
-                        loading={settingsLoading}
-                      />
-                    </Space>
-
-                    {nickSettings && nickSettings.reply_mode !== "none" && (
-                      <Tag color="gold">
-                        Reply: {REPLY_MODE_LABEL[nickSettings.reply_mode]} →{" "}
-                        {[
-                          nickSettings.reply_to_host ? "Host" : null,
-                          nickSettings.reply_to_moderator ? "Moderator" : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" + ") || "chưa chọn kênh"}
-                      </Tag>
-                    )}
-                    {nickSettings?.auto_post_enabled && (
-                      <Tag color="green">
-                        Auto-post →{" "}
-                        {[
-                          nickSettings.auto_post_to_host ? "Host" : null,
-                          nickSettings.auto_post_to_moderator ? "Moderator" : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" + ") || "chưa chọn kênh"}
-                      </Tag>
-                    )}
-                  </Space>
-                </Card>
-              )}
-
-              {/* Knowledge Products Modal */}
-              {modStatus?.configured && (
-                <>
-                  <Button
-                    icon={<DatabaseOutlined />}
-                    onClick={() => setKnowledgeModalOpen(true)}
-                    style={{ marginBottom: 16 }}
-                  >
-                    Knowledge Products
-                  </Button>
-                  <Modal
-                    title="Knowledge Products"
-                    open={knowledgeModalOpen}
-                    onCancel={() => setKnowledgeModalOpen(false)}
-                    footer={null}
-                    width={1000}
-                    destroyOnClose={false}
-                  >
-                    <KnowledgeProductsCard nickLiveId={selectedId} />
-                  </Modal>
-                </>
-              )}
-
-              {/* Reply Controls - only when scanning AND moderator configured */}
-              {isScanning && modStatus?.configured && (
-                <Card title="Reply Comment" style={{ marginBottom: 16 }}>
-                  <Space direction="vertical" style={{ width: "100%" }}>
-                    <Input
-                      placeholder="Nội dung reply (VD: Cảm ơn bạn đã hỏi!)"
-                      value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
-                      onPressEnter={handleAutoReply}
-                    />
-                    <Button
-                      type="primary"
-                      onClick={handleAutoReply}
-                      loading={replyLoading}
-                      disabled={!replyText.trim()}
-                    >
-                      Auto Reply tất cả
-                    </Button>
-                  </Space>
-
-                  {/* Reply per comment */}
-                  {replyText.trim() && commentsRef.current.length > 0 && (
-                    <div style={{ marginTop: 16, maxHeight: 300, overflowY: "auto" }}>
-                      <Text strong>Reply từng comment:</Text>
-                      {commentsRef.current.slice(-20).map((c, idx) => (
-                        <div
-                          key={c.id || idx}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            padding: "4px 8px",
-                            borderBottom: "1px solid #f0f0f0",
-                          }}
-                        >
-                          <div>
-                            <Text strong style={{ color: "#1677ff" }}>
-                              {getDisplayName(c)}:
-                            </Text>{" "}
-                            <Text>{getCommentText(c)}</Text>
-                          </div>
-                          <Button
-                            size="small"
-                            type="link"
-                            loading={replyLoading}
-                            onClick={() => handleSendReply(c)}
-                          >
-                            Reply
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Reply Results */}
-                  {replyResults.length > 0 && (
-                    <div style={{ marginTop: 16 }}>
-                      <Text strong>Kết quả reply:</Text>
-                      {replyResults.slice(-10).map((r, idx) => (
-                        <div key={idx} style={{ padding: "2px 8px" }}>
-                          <Tag color={r.success ? "green" : "red"}>
-                            {r.success ? "OK" : "FAIL"}
-                          </Tag>
-                          <Text>
-                            @{r.guest} - {r.success ? r.reply : r.error}
-                          </Text>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              )}
-
-              {/* Show message when moderator configured but not scanning */}
-              {!isScanning && modStatus?.configured && (
-                <Alert
-                  type="info"
-                  message="Bắt đầu quét comment để sử dụng reply"
-                  showIcon
-                  style={{ marginBottom: 16 }}
-                />
-              )}
-            </>
-          )}
-        </>
-      )}
       {/* Nick Config Modal */}
       <NickConfigModal
         nickLiveId={configNick?.id ?? 0}

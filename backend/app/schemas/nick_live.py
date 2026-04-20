@@ -17,6 +17,13 @@ class NickLiveCreate(BaseModel):
     cookies: str = Field(min_length=1, max_length=20000)
 
 
+class NickLiveUpdateCookies(BaseModel):
+    """Update cookies (and optionally user metadata) for an existing nick live."""
+
+    cookies: str = Field(min_length=1, max_length=20000)
+    user: UserPayload | None = None
+
+
 class NickLiveResponse(BaseModel):
     id: int
     name: str

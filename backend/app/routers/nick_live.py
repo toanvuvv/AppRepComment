@@ -15,6 +15,7 @@ from app.schemas.nick_live import (
     LiveSessionsResponse,
     NickLiveCreate,
     NickLiveResponse,
+    NickLiveUpdateCookies,
     ScanStatus,
 )
 from app.schemas.nick_live import (
@@ -66,6 +67,47 @@ def create_nick_live(payload: NickLiveCreate, db: Session = Depends(get_db)) -> 
 @router.get("", response_model=list[NickLiveResponse])
 def list_nick_lives(db: Session = Depends(get_db)) -> list[NickLive]:
     return db.query(NickLive).order_by(NickLive.created_at.desc()).all()
+
+
+@router.patch("/{nick_live_id}/cookies", response_model=NickLiveResponse)
+def update_nick_cookies(
+    nick_live_id: int,
+    payload: NickLiveUpdateCookies,
+    db: Session = Depends(get_db),
+) -> NickLive:
+    """Update cookies for an existing nick live.
+
+    If the scanner is running, it is restarted with the new cookies on the
+    same session so the poll loop picks up the fresh auth.
+    """
+    nick = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+    if not nick:
+        raise HTTPException(status_code=404, detail="NickLive not found")
+
+    nick.cookies = payload.cookies
+    if payload.user is not None:
+        nick.name = payload.user.name
+        nick.user_id = payload.user.id
+        nick.shop_id = payload.user.shop_id
+        nick.avatar = payload.user.avatar
+    db.commit()
+    db.refresh(nick)
+
+    from app.services.nick_cache import nick_cache
+    nick_cache.invalidate(nick_live_id)
+
+    status = scanner.get_status(nick_live_id)
+    if status.get("is_scanning") and status.get("session_id"):
+        session_id = status["session_id"]
+        scanner.stop(nick_live_id)
+        scanner.start(nick_live_id, session_id, nick.cookies)
+        logger.info(
+            "Restarted scanner for nick %s on session %s with fresh cookies",
+            nick_live_id,
+            session_id,
+        )
+
+    return nick
 
 
 @router.delete("/{nick_live_id}")

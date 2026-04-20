@@ -10,7 +10,7 @@ services:
       ENV: production
       APP_API_KEY: ${APP_API_KEY:?APP_API_KEY must be set in .env}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      COOKIE_ENCRYPTION_KEY: ${COOKIE_ENCRYPTION_KEY:-}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY must be set in .env}
       DATABASE_URL: sqlite:////app/data/database.db
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
     volumes:

@@ -9,17 +9,21 @@ import {
   Switch,
   Select,
   Space,
+  Table,
+  Popconfirm,
   Typography,
   Tag,
   Divider,
   message,
 } from "antd";
+import type { ColumnsType } from "antd/es/table";
 import {
   DeleteOutlined,
   PlusOutlined,
   PlayCircleOutlined,
   PauseCircleOutlined,
   ThunderboltOutlined,
+  DatabaseOutlined,
 } from "@ant-design/icons";
 
 import {
@@ -50,6 +54,13 @@ import {
   saveModeratorCurl,
   type ModeratorStatus,
 } from "../api/nickLive";
+
+import {
+  getKnowledgeProducts,
+  parseKnowledgeProducts,
+  deleteKnowledgeProducts,
+  type KnowledgeProduct,
+} from "../api/knowledge";
 
 const { TextArea } = Input;
 const { Text, Title } = Typography;
@@ -93,6 +104,10 @@ export default function NickConfigModal({
   const [curlText, setCurlText] = useState("");
   const [modSaving, setModSaving] = useState(false);
 
+  // --- Knowledge products state ---
+  const [products, setProducts] = useState<KnowledgeProduct[]>([]);
+  const [parseLoading, setParseLoading] = useState(false);
+
   // --- Debounce refs ---
   const debounceTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
@@ -102,7 +117,7 @@ export default function NickConfigModal({
 
     const load = async () => {
       try {
-        const [host, templates, replies, nickSettings, autoStatus, mod] =
+        const [host, templates, replies, nickSettings, autoStatus, mod, kps] =
           await Promise.all([
             getHostStatus(nickLiveId),
             getAutoPostTemplates(nickLiveId),
@@ -110,6 +125,7 @@ export default function NickConfigModal({
             getNickSettings(nickLiveId),
             getAutoPostStatus(nickLiveId),
             getModeratorStatus(nickLiveId),
+            getKnowledgeProducts(nickLiveId),
           ]);
 
         setHostStatus(host);
@@ -119,6 +135,7 @@ export default function NickConfigModal({
         setSettings(nickSettings);
         setAutoPostRunning(autoStatus.running);
         setModStatus(mod);
+        setProducts(kps);
       } catch {
         message.error("Failed to load nick configuration");
       }
@@ -269,6 +286,36 @@ export default function NickConfigModal({
     },
     [nickLiveId]
   );
+
+  // --- Knowledge handlers ---
+  const handleParseProducts = useCallback(async () => {
+    if (!sessionId) {
+      message.warning("Chưa có session đang live");
+      return;
+    }
+    setParseLoading(true);
+    try {
+      const data = await parseKnowledgeProducts(nickLiveId, Number(sessionId));
+      setProducts(data);
+      message.success(`Parse thành công ${data.length} sản phẩm`);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail;
+      message.error(detail || "Parse thất bại");
+    } finally {
+      setParseLoading(false);
+    }
+  }, [nickLiveId, sessionId]);
+
+  const handleDeleteAllProducts = useCallback(async () => {
+    try {
+      await deleteKnowledgeProducts(nickLiveId);
+      setProducts([]);
+      message.success("Đã xóa tất cả sản phẩm");
+    } catch {
+      message.error("Xóa thất bại");
+    }
+  }, [nickLiveId]);
 
   // --- Moderator handlers ---
   const handleSaveCurl = useCallback(async () => {
@@ -554,6 +601,140 @@ export default function NickConfigModal({
           />
         </Space>
       ),
+    },
+    {
+      key: "knowledge",
+      label: "Knowledge",
+      children: (() => {
+        const parseKeywords = (raw: string): string[] => {
+          try {
+            const p = JSON.parse(raw);
+            return Array.isArray(p) ? p : [];
+          } catch {
+            return [];
+          }
+        };
+        const parseJsonArr = (raw: string | null): string[] => {
+          if (!raw) return [];
+          try {
+            const p = JSON.parse(raw);
+            return Array.isArray(p) ? p : [];
+          } catch {
+            return [];
+          }
+        };
+        const formatPrice = (v: number | null): string =>
+          v === null ? "-" : `${v.toLocaleString("vi-VN")}đ`;
+
+        const columns: ColumnsType<KnowledgeProduct> = [
+          { title: "#", dataIndex: "product_order", width: 50 },
+          { title: "Tên", dataIndex: "name", ellipsis: true, width: 220 },
+          {
+            title: "Keywords",
+            dataIndex: "keywords",
+            width: 180,
+            render: (val: string) =>
+              parseKeywords(val).map((kw, i) => (
+                <Tag key={i} color="blue">
+                  {kw}
+                </Tag>
+              )),
+          },
+          {
+            title: "Giá",
+            width: 130,
+            render: (_: unknown, r: KnowledgeProduct) => {
+              const price =
+                r.price_min === r.price_max
+                  ? formatPrice(r.price_min)
+                  : `${formatPrice(r.price_min)} - ${formatPrice(r.price_max)}`;
+              return (
+                <span>
+                  {price}
+                  {r.discount_pct ? (
+                    <Tag color="red" style={{ marginLeft: 4 }}>
+                      -{r.discount_pct}%
+                    </Tag>
+                  ) : null}
+                </span>
+              );
+            },
+          },
+          {
+            title: "KM",
+            width: 140,
+            render: (_: unknown, r: KnowledgeProduct) => {
+              const vs = parseJsonArr(r.voucher_info);
+              if (!vs.length) return "-";
+              return (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+                  {vs.map((v, i) => (
+                    <Tag key={i} color="orange">
+                      {v}
+                    </Tag>
+                  ))}
+                </div>
+              );
+            },
+          },
+          {
+            title: "Tồn",
+            dataIndex: "stock_qty",
+            width: 70,
+            render: (val: number | null, r: KnowledgeProduct) => (
+              <Tag color={r.in_stock ? "green" : "red"}>
+                {r.in_stock ? val ?? "Có" : "Hết"}
+              </Tag>
+            ),
+          },
+        ];
+
+        return (
+          <Space direction="vertical" style={{ width: "100%" }} size="middle">
+            <Space align="center">
+              <Text strong>
+                <DatabaseOutlined /> {products.length} sản phẩm
+              </Text>
+              <Button
+                type="primary"
+                icon={<ThunderboltOutlined />}
+                loading={parseLoading}
+                disabled={!sessionId}
+                onClick={handleParseProducts}
+              >
+                Parse sản phẩm
+              </Button>
+              {products.length > 0 && (
+                <Popconfirm
+                  title="Xóa tất cả sản phẩm?"
+                  onConfirm={handleDeleteAllProducts}
+                  okText="Xóa"
+                  cancelText="Hủy"
+                >
+                  <Button danger icon={<DeleteOutlined />}>
+                    Xóa tất cả
+                  </Button>
+                </Popconfirm>
+              )}
+            </Space>
+            {!sessionId && (
+              <Text type="secondary">
+                Cần có phiên live đang scan để parse sản phẩm từ Relive.
+              </Text>
+            )}
+            {products.length > 0 && (
+              <Table
+                dataSource={products}
+                columns={columns}
+                rowKey="pk"
+                size="small"
+                pagination={false}
+                scroll={{ x: 800, y: 400 }}
+              />
+            )}
+          </Space>
+        );
+      })(),
     },
     {
       key: "moderator",

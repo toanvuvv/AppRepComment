@@ -8,6 +8,7 @@ from app.services.http_client import get_client
 logger = logging.getLogger(__name__)
 
 _RELIVE_URL = "https://api.relive.vn/livestream/preview"
+_RELIVE_ITEMS_URL = "https://api.relive.vn/livestream/items"
 
 
 async def get_host_credentials(
@@ -59,3 +60,35 @@ async def get_host_credentials(
         )
 
     return {"usersig": usersig, "uuid": uuid_val}
+
+
+async def fetch_livestream_items(
+    api_key: str,
+    cookies: str,
+    session_id: int,
+    proxy: str | None = None,
+) -> str:
+    """Call relive.vn /livestream/items and return the raw JSON string.
+
+    The returned string is fed directly into KnowledgeProductService.parse_shopee_cart_json.
+    """
+    payload: dict[str, Any] = {
+        "apikey": api_key,
+        "cookie": cookies,
+        "session_id": session_id,
+        "country": "vn",
+        "proxy": proxy or "",
+    }
+
+    client = get_client()
+    try:
+        resp = await client.post(_RELIVE_ITEMS_URL, json=payload, timeout=30.0)
+    except Exception as exc:
+        raise ValueError(f"Relive.vn items request failed: {exc}") from exc
+
+    if resp.status_code != 200:
+        raise ValueError(
+            f"Relive.vn items returned status {resp.status_code}: {resp.text[:300]}"
+        )
+
+    return resp.text
