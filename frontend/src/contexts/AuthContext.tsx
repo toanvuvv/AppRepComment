@@ -1,5 +1,17 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 
+function isTokenValid(token: string): boolean {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    // base64url → base64
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.exp === "number" && payload.exp * 1000 > Date.now();
+  } catch {
+    return false;
+  }
+}
+
 export interface AuthUser {
   id: number;
   username: string;
@@ -29,8 +41,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      try { setState(JSON.parse(raw)); }
-      catch { localStorage.removeItem(STORAGE_KEY); }
+      try {
+        const parsed = JSON.parse(raw) as AuthState;
+        if (parsed.token && isTokenValid(parsed.token)) {
+          setState(parsed);
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      } catch {
+        localStorage.removeItem(STORAGE_KEY);
+      }
     }
   }, []);
 
