@@ -44,16 +44,27 @@ class KnowledgeProductService:
         except json.JSONDecodeError:
             raise ValueError("JSON không hợp lệ")
 
-        items = []
-        if isinstance(data, dict):
-            if "data" in data and isinstance(data["data"], dict):
-                items = data["data"].get("items", [])
-            elif "items" in data:
-                items = data["items"]
-            elif isinstance(data.get("data"), list):
-                items = data["data"]
-        elif isinstance(data, list):
+        items: list = []
+        if isinstance(data, list):
             items = data
+        else:
+            # Unwrap nested envelopes (e.g. relive.vn wraps Shopee payload twice:
+            # { "data": { "err_code": 0, "data": { "items": [...] } } }).
+            node = data
+            for _ in range(5):
+                if not isinstance(node, dict):
+                    break
+                if isinstance(node.get("items"), list):
+                    items = node["items"]
+                    break
+                inner = node.get("data")
+                if isinstance(inner, list):
+                    items = inner
+                    break
+                if isinstance(inner, dict):
+                    node = inner
+                    continue
+                break
 
         products = []
         for item in items:

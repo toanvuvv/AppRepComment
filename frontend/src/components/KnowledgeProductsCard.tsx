@@ -74,6 +74,31 @@ function KnowledgeProductsCardInner({ nickLiveId }: Props) {
       width: 250,
     },
     {
+      title: "Item ID",
+      dataIndex: "item_id",
+      width: 130,
+      render: (val: number, r: KnowledgeProduct) => (
+        <a
+          href={`https://shopee.vn/product/${r.shop_id}/${val}`}
+          target="_blank"
+          rel="noreferrer"
+          style={{ fontFamily: "monospace", fontSize: 12 }}
+        >
+          {val}
+        </a>
+      ),
+    },
+    {
+      title: "Shop ID",
+      dataIndex: "shop_id",
+      width: 110,
+      render: (val: number) => (
+        <Text copyable style={{ fontFamily: "monospace", fontSize: 12 }}>
+          {val}
+        </Text>
+      ),
+    },
+    {
       title: "Keywords",
       dataIndex: "keywords",
       width: 200,

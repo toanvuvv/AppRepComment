@@ -29,11 +29,29 @@ async def get_host_credentials(
         "proxy": proxy or "",
     }
 
+    # Debug: log outgoing payload (mask apikey + trim cookie for safety)
+    masked_key = (api_key[:4] + "..." + api_key[-4:]) if api_key and len(api_key) > 10 else "<short>"
+    cookie_preview = (cookies[:120] + f"...<len={len(cookies)}>") if cookies else "<empty>"
+    logger.info(
+        "Relive preview POST %s | apikey=%s | proxy=%r | cookie_len=%d | cookie_preview=%s",
+        _RELIVE_URL,
+        masked_key,
+        proxy or "",
+        len(cookies or ""),
+        cookie_preview,
+    )
+
     client = get_client()
     try:
         resp = await client.post(_RELIVE_URL, json=payload, timeout=30.0)
     except Exception as exc:
         raise ValueError(f"Relive.vn request failed: {exc}") from exc
+
+    logger.info(
+        "Relive preview <- status=%s body[:500]=%s",
+        resp.status_code,
+        resp.text[:500],
+    )
 
     if resp.status_code != 200:
         raise ValueError(
@@ -45,11 +63,18 @@ async def get_host_credentials(
     except Exception as exc:
         raise ValueError(f"Relive.vn returned invalid JSON: {exc}") from exc
 
-    root = data.get("data") or data
-    uuid_val = root.get("uuid")
-    usersig = None
+    # Surface explicit error shape: {"success": false, "error": "..."}
+    if isinstance(data, dict) and data.get("success") is False:
+        err = data.get("error") or data.get("err_msg") or "unknown error"
+        raise ValueError(f"Relive.vn returned error: {err}")
+
+    root = data.get("data") if isinstance(data.get("data"), dict) else data
     # preview_config may be nested: data.data.preview_config or data.preview_config
     inner = root.get("data") if isinstance(root.get("data"), dict) else root
+
+    # uuid can live on either root or inner depending on response nesting
+    uuid_val = inner.get("uuid") or root.get("uuid")
+    usersig = None
     preview_config = inner.get("preview_config")
     if isinstance(preview_config, dict):
         usersig = preview_config.get("usersig")
