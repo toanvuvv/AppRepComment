@@ -113,6 +113,17 @@ def list_nick_lives(
     )
 
 
+@router.get("/{nick_live_id}/cookies")
+def get_nick_cookies(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    """Return the current cookies string for this nick (owner only)."""
+    nick = _owned_nick_or_404(db, nick_live_id, current_user.id)
+    return {"cookies": nick.cookies or ""}
+
+
 @router.patch("/{nick_live_id}/cookies", response_model=NickLiveResponse)
 def update_nick_cookies(
     nick_live_id: int,
@@ -479,16 +490,18 @@ async def host_get_credentials(
     nick_settings = svc.get_or_create_nick_settings(nick_live_id)
     proxy = getattr(nick_settings, "host_proxy", None)
 
+    debug: dict = {}  # DEBUG_RELIVE
     try:
-        creds = await get_host_credentials(nick.cookies, api_key, proxy=proxy)
+        creds = await get_host_credentials(nick.cookies, api_key, proxy=proxy, debug=debug)
     except ValueError as exc:
         logger.error("host_get_credentials failed for nick %s: %s", nick_live_id, exc)
-        raise HTTPException(status_code=502, detail=str(exc))
+        # DEBUG_RELIVE: surface debug dict so FE can log it
+        raise HTTPException(status_code=502, detail={"message": str(exc), "debug": debug})
 
     svc.save_host_config(nick_live_id, creds["usersig"], creds["uuid"])
     moderator.save_host_config(nick_live_id, creds["usersig"], creds["uuid"])
 
-    return {"status": "ok", "uuid": creds["uuid"]}
+    return {"status": "ok", "uuid": creds["uuid"], "debug": debug}  # DEBUG_RELIVE
 
 
 @router.get("/{nick_live_id}/host/status")

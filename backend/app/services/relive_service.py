@@ -16,6 +16,7 @@ async def get_host_credentials(
     cookies: str,
     api_key: str,
     proxy: str | None = None,
+    debug: dict[str, Any] | None = None,  # DEBUG_RELIVE
 ) -> dict[str, Any]:
     """Call relive.vn to obtain usersig and uuid for the host.
 
@@ -28,6 +29,14 @@ async def get_host_credentials(
         "country": "vn",
         "proxy": proxy or "",
     }
+
+    # DEBUG_RELIVE: capture outgoing request for FE console
+    if debug is not None:
+        debug["url"] = _RELIVE_URL
+        debug["method"] = "POST"
+        debug["payload"] = dict(payload)
+        debug["cookies"] = cookies
+        debug["cookie_length"] = len(cookies or "")
 
     # Debug: log outgoing payload (mask apikey + trim cookie for safety)
     masked_key = (api_key[:4] + "..." + api_key[-4:]) if api_key and len(api_key) > 10 else "<short>"
@@ -45,6 +54,8 @@ async def get_host_credentials(
     try:
         resp = await client.post(_RELIVE_URL, json=payload, timeout=30.0)
     except Exception as exc:
+        if debug is not None:  # DEBUG_RELIVE
+            debug["error"] = f"request_failed: {exc}"
         raise ValueError(f"Relive.vn request failed: {exc}") from exc
 
     logger.info(
@@ -52,6 +63,11 @@ async def get_host_credentials(
         resp.status_code,
         resp.text[:500],
     )
+
+    # DEBUG_RELIVE: capture raw response for FE console
+    if debug is not None:
+        debug["status_code"] = resp.status_code
+        debug["response_text"] = resp.text
 
     if resp.status_code != 200:
         raise ValueError(

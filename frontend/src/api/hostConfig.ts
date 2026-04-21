@@ -60,8 +60,37 @@ export async function getHostStatus(nickLiveId: number): Promise<HostConfigStatu
 }
 
 export async function getHostCredentials(nickLiveId: number): Promise<HostConfigStatus> {
-  const res = await apiClient.post(`/nick-lives/${nickLiveId}/host/get-credentials`);
-  return res.data;
+  try {
+    const res = await apiClient.post(`/nick-lives/${nickLiveId}/host/get-credentials`);
+    // DEBUG_RELIVE: log outgoing payload + raw relive response
+    if (res.data?.debug) {
+      // eslint-disable-next-line no-console
+      console.groupCollapsed("[DEBUG_RELIVE] get-credentials OK");
+      // eslint-disable-next-line no-console
+      console.log("payload →", res.data.debug.payload);
+      // eslint-disable-next-line no-console
+      console.log("cookies →", res.data.debug.cookies);
+      // eslint-disable-next-line no-console
+      console.log("status ←", res.data.debug.status_code);
+      // eslint-disable-next-line no-console
+      console.log("response_text ←", res.data.debug.response_text);
+      // eslint-disable-next-line no-console
+      console.groupEnd();
+    }
+    return res.data;
+  } catch (err: unknown) {
+    // DEBUG_RELIVE: log debug info from error response
+    const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+    if (detail && typeof detail === "object") {
+      // eslint-disable-next-line no-console
+      console.groupCollapsed("[DEBUG_RELIVE] get-credentials FAILED");
+      // eslint-disable-next-line no-console
+      console.log("detail →", detail);
+      // eslint-disable-next-line no-console
+      console.groupEnd();
+    }
+    throw err;
+  }
 }
 
 export async function hostPostComment(

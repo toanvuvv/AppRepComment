@@ -37,6 +37,7 @@ import {
   createNickLive,
   deleteNickLive,
   updateNickLiveCookies,
+  getNickLiveCookies,
   getSessions,
   startScan,
   stopScan,
@@ -141,6 +142,27 @@ function LiveScan() {
   } | null>(null);
   const [editCookiesJson, setEditCookiesJson] = useState("");
   const [editCookiesLoading, setEditCookiesLoading] = useState(false);
+  const [editCookiesFetching, setEditCookiesFetching] = useState(false);
+
+  // Load current cookies whenever the modal opens for a nick
+  useEffect(() => {
+    if (!editCookiesNick) return;
+    let cancelled = false;
+    setEditCookiesFetching(true);
+    getNickLiveCookies(editCookiesNick.id)
+      .then((current) => {
+        if (!cancelled) setEditCookiesJson(current);
+      })
+      .catch(() => {
+        if (!cancelled) message.error("Không tải được cookies hiện tại");
+      })
+      .finally(() => {
+        if (!cancelled) setEditCookiesFetching(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editCookiesNick]);
 
   // Reply Logs modal
   const [replyLogsModalOpen, setReplyLogsModalOpen] = useState(false);
@@ -647,12 +669,22 @@ function LiveScan() {
           scanner sẽ tự khởi động lại với cookies mới.
         </Text>
         <TextArea
-          rows={6}
+          rows={8}
           value={editCookiesJson}
           onChange={(e) => setEditCookiesJson(e.target.value)}
-          placeholder="Cookies mới hoặc JSON"
-          style={{ marginTop: 8 }}
+          placeholder={
+            editCookiesFetching
+              ? "Đang tải cookies hiện tại..."
+              : "Cookies mới hoặc JSON"
+          }
+          disabled={editCookiesFetching}
+          style={{ marginTop: 8, fontFamily: "monospace", fontSize: 12 }}
         />
+        <Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 4 }}>
+          {editCookiesFetching
+            ? "Đang tải..."
+            : `Độ dài hiện tại: ${editCookiesJson.length} ký tự`}
+        </Text>
       </Modal>
 
       {/* Nick Config Modal */}

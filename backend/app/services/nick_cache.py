@@ -147,11 +147,14 @@ class NickRuntimeCache:
         nick_live_id: int, db_factory: DbFactory
     ) -> NickSettingsSnapshot:
         # Local imports to avoid import cycles at module load time.
+        from app.models.nick_live import NickLive
         from app.services.settings_service import SettingsService
 
         db = db_factory()
         try:
-            svc = SettingsService(db)
+            nick_row = db.query(NickLive).filter(NickLive.id == nick_live_id).first()
+            user_id: int | None = nick_row.user_id if nick_row else None
+            svc = SettingsService(db, user_id=user_id)
             row = svc.get_or_create_nick_settings(nick_live_id)
 
             host_config_dict: dict | None = None
