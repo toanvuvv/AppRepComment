@@ -1,5 +1,5 @@
 import { Layout, Menu, Dropdown, Avatar, Space } from "antd";
-import { HomeOutlined, CommentOutlined, SettingOutlined, UserOutlined, LogoutOutlined, KeyOutlined, TeamOutlined } from "@ant-design/icons";
+import { HomeOutlined, CommentOutlined, ExperimentOutlined, SettingOutlined, UserOutlined, LogoutOutlined, KeyOutlined, TeamOutlined } from "@ant-design/icons";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import type { MenuProps } from "antd";
 import { useAuth } from "../contexts/AuthContext";
@@ -21,6 +21,11 @@ function AppLayout() {
       key: "/live-scan",
       icon: <CommentOutlined />,
       label: "Quét Comment",
+    },
+    {
+      key: "/seeding",
+      icon: <ExperimentOutlined />,
+      label: "Seeding",
     },
     {
       key: "/settings",

@@ -5,6 +5,7 @@ import AdminRoute from "./components/AdminRoute";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import LiveScan from "./pages/LiveScan";
+import Seeding from "./pages/Seeding";
 import Settings from "./pages/Settings";
 import ChangePassword from "./pages/ChangePassword";
 import AdminUsers from "./pages/AdminUsers";
@@ -17,6 +18,7 @@ function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Home />} />
           <Route path="/live-scan" element={<LiveScan />} />
+          <Route path="/seeding" element={<Seeding />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/change-password" element={<ChangePassword />} />
           <Route element={<AdminRoute />}>
