@@ -16,6 +16,7 @@ import {
   message,
   Divider,
   Modal,
+  Select,
 } from "antd";
 import {
   UserOutlined,
@@ -28,7 +29,9 @@ import {
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useReplyLogs } from "../hooks/useReplyLogs";
-import type { ReplyLog, ReplyOutcome } from "../api/replyLogs";
+import { useReplyLogSessions } from "../hooks/useReplyLogSessions";
+import { deleteReplyLogSession } from "../api/replyLogs";
+import type { ReplyLog, ReplyOutcome, ReplyLogSession } from "../api/replyLogs";
 import {
   type NickLive,
   type LiveSession,
@@ -166,10 +169,44 @@ function LiveScan() {
 
   // Reply Logs modal
   const [replyLogsModalOpen, setReplyLogsModalOpen] = useState(false);
+  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
+  const { sessions: replyLogSessions, refresh: refreshSessions } =
+    useReplyLogSessions(selectedId, replyLogsModalOpen);
 
-  // Reply logs (polled while scanning)
+  // Reply logs (polled while scanning or modal open)
   const { logs: replyLogs, stats: replyStats, index: replyLogIndex, refresh: refreshReplyLogs } =
-    useReplyLogs(selectedId, isScanning);
+    useReplyLogs(
+      selectedId,
+      isScanning || replyLogsModalOpen,
+      replyLogsModalOpen ? selectedSessionId : null,
+    );
+
+  // Auto-pick newest session when modal opens or sessions change
+  useEffect(() => {
+    if (!replyLogsModalOpen) return;
+    if (replyLogSessions.length === 0) {
+      setSelectedSessionId(null);
+      return;
+    }
+    if (
+      selectedSessionId === null ||
+      !replyLogSessions.some((s) => s.session_id === selectedSessionId)
+    ) {
+      setSelectedSessionId(replyLogSessions[0].session_id);
+    }
+  }, [replyLogsModalOpen, replyLogSessions, selectedSessionId]);
+
+  const handleClearSession = useCallback(async () => {
+    if (selectedId === null || selectedSessionId === null) return;
+    try {
+      const { deleted } = await deleteReplyLogSession(selectedId, selectedSessionId);
+      message.success(`Đã xóa ${deleted} log của session ${selectedSessionId}`);
+      refreshSessions();
+      refreshReplyLogs();
+    } catch {
+      message.error("Không xóa được session log");
+    }
+  }, [selectedId, selectedSessionId, refreshSessions, refreshReplyLogs]);
 
   // Ref for comments from CommentFeed (no re-renders)
   const commentsRef = useRef<CommentItem[]>([]);
@@ -641,7 +678,37 @@ function LiveScan() {
         footer={null}
         width={900}
       >
-        <div style={{ maxHeight: "70vh", overflowY: "auto" }}>
+        <Space style={{ marginBottom: 12 }} wrap>
+          <Select
+            style={{ minWidth: 360 }}
+            value={selectedSessionId}
+            placeholder="Chọn session"
+            onChange={(v) => setSelectedSessionId(v)}
+            options={replyLogSessions.map((s: ReplyLogSession) => ({
+              value: s.session_id,
+              label: `Session #${s.session_id} · ${new Date(s.first_at).toLocaleTimeString()}–${new Date(s.last_at).toLocaleTimeString()} · ${s.count} reply`,
+            }))}
+            disabled={replyLogSessions.length === 0}
+          />
+          <Popconfirm
+            title="Xóa toàn bộ log của session này?"
+            description="Hành động không thể hoàn tác."
+            okText="Xóa"
+            cancelText="Hủy"
+            onConfirm={handleClearSession}
+            disabled={selectedSessionId === null}
+          >
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              disabled={selectedSessionId === null}
+            >
+              Clear session này
+            </Button>
+          </Popconfirm>
+        </Space>
+
+        <div style={{ maxHeight: 600, overflowY: "auto" }}>
           {replyLogs.length === 0 ? (
             <Text type="secondary">Chưa có reply log nào</Text>
           ) : (
