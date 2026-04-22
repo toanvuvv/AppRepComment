@@ -195,7 +195,7 @@ export function ManualSendTab({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Nhập nội dung comment seeding..."
-              maxLength={200}
+              maxLength={2000}
               showCount
             />
           </div>

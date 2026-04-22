@@ -5,7 +5,7 @@ import apiClient from "./client";
 export interface SeedingClone {
   id: number;
   name: string;
-  shopee_user_id: string;
+  shopee_user_id: number;
   avatar: string | null;
   proxy: string | null;
   last_sent_at: string | null;
@@ -23,7 +23,7 @@ export interface SeedingLogSession {
   id: number;
   user_id: number;
   nick_live_id: number;
-  shopee_session_id: string;
+  shopee_session_id: number;
   mode: "manual" | "auto";
   started_at: string;
   stopped_at: string | null;
@@ -44,7 +44,7 @@ export interface SeedingRunStatus {
   log_session_id: number;
   running: boolean;
   nick_live_id: number;
-  shopee_session_id: string;
+  shopee_session_id: number;
   clone_ids: number[];
   min_interval_sec: number;
   max_interval_sec: number;
@@ -62,13 +62,13 @@ export interface ManualSendResult {
 
 export interface CreateClonePayload {
   name: string;
-  shopee_user_id: string;
+  shopee_user_id: number;
   avatar?: string | null;
   proxy?: string | null;
 }
 
 export type UpdateClonePatch = Partial<
-  Pick<SeedingClone, "name" | "shopee_user_id" | "avatar" | "proxy">
+  Pick<SeedingClone, "name" | "avatar" | "proxy">
 >;
 
 export async function listClones(): Promise<SeedingClone[]> {
@@ -137,7 +137,7 @@ export async function bulkCreateTemplates(
 
 export interface ManualSendPayload {
   nick_live_id: number;
-  shopee_session_id: string;
+  shopee_session_id: number;
   clone_id: number;
   content: string;
   template_id?: number | null;
@@ -154,7 +154,7 @@ export async function manualSend(
 
 export interface AutoStartPayload {
   nick_live_id: number;
-  shopee_session_id: string;
+  shopee_session_id: number;
   clone_ids: number[];
   min_interval_sec?: number;
   max_interval_sec?: number;
