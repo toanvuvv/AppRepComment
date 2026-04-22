@@ -19,6 +19,7 @@ from app.routers.health import router as health_router
 from app.routers.knowledge import router as knowledge_router
 from app.routers.nick_live import router as nick_live_router
 from app.routers.reply_logs import router as reply_logs_router
+from app.routers.seeding import router as seeding_router
 from app.routers.settings import router as settings_router
 
 logger = logging.getLogger(__name__)
@@ -146,6 +147,7 @@ app.include_router(settings_router)
 app.include_router(knowledge_router)
 app.include_router(health_router)
 app.include_router(reply_logs_router)
+app.include_router(seeding_router)
 
 
 @app.get("/api/health")
