@@ -155,3 +155,79 @@ def delete_clone(
     db.delete(row)
     db.commit()
     return Response(status_code=204)
+
+
+# ---------- Template CRUD ----------
+
+@router.post("/templates", response_model=SeedingTemplateResponse)
+def create_template(
+    payload: SeedingTemplateCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SeedingCommentTemplate:
+    row = SeedingCommentTemplate(
+        user_id=current_user.id,
+        content=payload.content,
+        enabled=payload.enabled,
+    )
+    db.add(row); db.commit(); db.refresh(row)
+    return row
+
+
+@router.get("/templates", response_model=list[SeedingTemplateResponse])
+def list_templates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[SeedingCommentTemplate]:
+    return (db.query(SeedingCommentTemplate)
+            .filter(SeedingCommentTemplate.user_id == current_user.id)
+            .order_by(SeedingCommentTemplate.created_at.desc())
+            .all())
+
+
+@router.patch("/templates/{tpl_id}", response_model=SeedingTemplateResponse)
+def update_template(
+    tpl_id: int,
+    payload: SeedingTemplateUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SeedingCommentTemplate:
+    row = _owned_template(db, tpl_id, current_user.id)
+    if payload.content is not None:
+        row.content = payload.content
+    if payload.enabled is not None:
+        row.enabled = payload.enabled
+    db.commit(); db.refresh(row)
+    return row
+
+
+@router.delete("/templates/{tpl_id}", status_code=204)
+def delete_template(
+    tpl_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    row = _owned_template(db, tpl_id, current_user.id)
+    db.delete(row); db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/templates/bulk", response_model=list[SeedingTemplateResponse])
+def bulk_create_templates(
+    payload: SeedingTemplateBulkRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[SeedingCommentTemplate]:
+    created: list[SeedingCommentTemplate] = []
+    for line in payload.lines:
+        content = line.strip()
+        if not content:
+            continue
+        row = SeedingCommentTemplate(
+            user_id=current_user.id, content=content, enabled=True,
+        )
+        db.add(row); created.append(row)
+    db.commit()
+    for r in created:
+        db.refresh(r)
+    return created

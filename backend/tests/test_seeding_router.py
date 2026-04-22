@@ -6,7 +6,7 @@ from app.main import app
 from app.database import Base, SessionLocal, engine
 from app.dependencies import get_current_user
 from app.models.user import User
-from app.models.seeding import SeedingClone
+from app.models.seeding import SeedingClone, SeedingCommentTemplate
 
 
 def _override_user(u: User):
@@ -31,6 +31,7 @@ def user():
     yield u
     app.dependency_overrides.clear()
     with SessionLocal() as db:
+        db.query(SeedingCommentTemplate).filter(SeedingCommentTemplate.user_id == uid).delete()
         db.query(SeedingClone).filter(SeedingClone.user_id == uid).delete()
         db.query(User).filter(User.id == uid).delete()
         db.commit()
@@ -95,6 +96,32 @@ def test_quota_enforced():
     finally:
         app.dependency_overrides.clear()
         with SessionLocal() as db:
+            db.query(SeedingCommentTemplate).filter(SeedingCommentTemplate.user_id == uid).delete()
             db.query(SeedingClone).filter(SeedingClone.user_id == uid).delete()
             db.query(User).filter(User.id == uid).delete()
             db.commit()
+
+
+def test_template_create(user):
+    c = TestClient(app)
+    r = c.post("/api/seeding/templates", json={"content": "đẹp quá"})
+    assert r.status_code == 200
+    assert r.json()["content"] == "đẹp quá"
+
+
+def test_template_bulk(user):
+    c = TestClient(app)
+    r = c.post("/api/seeding/templates/bulk",
+               json={"lines": ["a", "b", " ", "c"]})
+    assert r.status_code == 200
+    # empty/whitespace lines are skipped
+    assert len(r.json()) == 3
+
+
+def test_template_toggle_disable(user):
+    c = TestClient(app)
+    r = c.post("/api/seeding/templates", json={"content": "x"})
+    tid = r.json()["id"]
+    r2 = c.patch(f"/api/seeding/templates/{tid}", json={"enabled": False})
+    assert r2.status_code == 200
+    assert r2.json()["enabled"] is False
