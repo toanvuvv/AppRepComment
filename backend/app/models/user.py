@@ -14,6 +14,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(10), nullable=False, default="user")
     max_nicks: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_clones: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)

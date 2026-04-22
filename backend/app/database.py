@@ -171,3 +171,6 @@ def init_db():
 
     m004 = importlib.import_module("migrations.004_multi_user")
     m004.migrate()
+
+    m005 = importlib.import_module("migrations.005_seeding")
+    m005.migrate()
