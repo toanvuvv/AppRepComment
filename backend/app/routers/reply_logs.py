@@ -12,7 +12,7 @@ import logging
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -179,3 +179,34 @@ def reply_log_stats(
         since=since,
         until=until,
     )
+
+
+@router.delete("")
+def delete_reply_log_session(
+    nick_live_id: int = Query(..., gt=0),
+    session_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Xóa toàn bộ reply log của 1 session cho 1 nick.
+
+    Trả 404 nếu nick không thuộc user hiện tại.
+    """
+    owns = (
+        db.query(NickLive.id)
+        .filter(NickLive.id == nick_live_id, NickLive.user_id == current_user.id)
+        .first()
+    )
+    if owns is None:
+        raise HTTPException(status_code=404, detail="nick_live not found")
+
+    deleted = (
+        db.query(ReplyLog)
+        .filter(
+            ReplyLog.nick_live_id == nick_live_id,
+            ReplyLog.session_id == session_id,
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"deleted": int(deleted or 0)}
