@@ -68,7 +68,7 @@ class SeedingLogSession(Base):
     )
     nick_live_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("nick_lives.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=False, index=True,
     )
     shopee_session_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     # 'manual' | 'auto'

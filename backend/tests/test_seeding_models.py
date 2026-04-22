@@ -1,6 +1,8 @@
 """Schema smoke-tests: migration adds expected columns and tables."""
 import sqlite3
 
+import pytest
+
 from app.database import engine, init_db
 from app.models.seeding import (  # noqa: F401
     SeedingClone,
@@ -10,8 +12,10 @@ from app.models.seeding import (  # noqa: F401
 )
 
 
-# Ensure all migrations (including 005_seeding) have run against the test DB.
-init_db()
+@pytest.fixture(autouse=True, scope="session")
+def _run_migrations():
+    """Ensure all migrations (including 005_seeding) have run against the test DB."""
+    init_db()
 
 
 def _table_columns(table: str) -> set[str]:

@@ -25,6 +25,10 @@ def migrate() -> None:
         if not _col_exists(cur, "users", "max_clones"):
             cur.execute("ALTER TABLE users ADD COLUMN max_clones INTEGER")
             logger.info("Added users.max_clones")
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS ix_seeding_log_sessions_nick_live_id "
+            "ON seeding_log_sessions (nick_live_id)"
+        )
         raw.commit()
         logger.info("Migration 005_seeding complete")
     finally:
