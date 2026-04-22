@@ -65,3 +65,14 @@ class ReplyLogCreate(BaseModel):
     llm_latency_ms: int | None = None
     retry_count: int = 0
     cached_hit: bool = False
+
+
+class ReplyLogSessionSummary(BaseModel):
+    """Tóm tắt 1 session live: range thời gian và số reply đã log."""
+
+    session_id: int
+    first_at: datetime
+    last_at: datetime
+    count: int
+
+    model_config = {"from_attributes": True}
