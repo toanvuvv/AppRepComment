@@ -434,7 +434,7 @@ export default function NickConfigModal({
           <div>
             <Text strong>Status: </Text>
             {hostStatus?.configured ? (
-              <Tag color="green">UUID: {hostStatus.uuid}</Tag>
+              <Tag color="green">Đã cấu hình</Tag>
             ) : (
               <Tag color="default">Chua co</Tag>
             )}

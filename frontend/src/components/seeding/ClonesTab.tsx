@@ -55,7 +55,7 @@ export function ClonesTab() {
     setAdding(true);
     try {
       // The JSON blob should contain name + shopee_user_id at minimum
-      await create(payload as Parameters<typeof create>[0]);
+      await create(payload as unknown as Parameters<typeof create>[0]);
       message.success("Thêm clone thành công");
       setJsonText("");
       setProxyOverride("");
