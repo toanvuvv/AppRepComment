@@ -29,7 +29,10 @@ async def test_generate_reply_calls_openai():
 
 @pytest.mark.asyncio
 async def test_generate_reply_returns_fallback_on_error():
+    from app.services import ai_reply_service
     from app.services.ai_reply_service import generate_reply
+
+    ai_reply_service._clients.clear()
 
     with patch("app.services.ai_reply_service.AsyncOpenAI") as mock_client_cls:
         mock_client = AsyncMock()
@@ -37,7 +40,7 @@ async def test_generate_reply_returns_fallback_on_error():
         mock_client.chat.completions.create = AsyncMock(side_effect=Exception("API error"))
 
         result = await generate_reply(
-            api_key="sk-test",
+            api_key="sk-err",
             model="gpt-4o",
             system_prompt="...",
             comment_text="Hỏi gì đó",

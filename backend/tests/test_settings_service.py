@@ -4,6 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
+from app.models import user  # noqa: F401 - register users table before FK resolution
+from app.models import nick_live  # noqa: F401
 from app.models.settings import AppSetting, ReplyTemplate, AutoPostTemplate
 
 
@@ -11,6 +13,7 @@ from app.models.settings import AppSetting, ReplyTemplate, AutoPostTemplate
 def db():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     # Import all models
+    from app.models import user  # noqa
     from app.models import nick_live  # noqa
     from app.models import settings  # noqa
     Base.metadata.create_all(engine)
@@ -70,15 +73,17 @@ def test_nick_live_settings_default_all_off(db):
     from app.services.settings_service import SettingsService
     svc = SettingsService(db)
     settings = svc.get_or_create_nick_settings(nick_live_id=42)
-    assert settings.ai_reply_enabled is False
-    assert settings.auto_reply_enabled is False
+    assert settings.reply_mode == "none"
+    assert settings.reply_to_host is False
+    assert settings.reply_to_moderator is False
     assert settings.auto_post_enabled is False
 
 
 def test_nick_live_settings_update(db):
     from app.services.settings_service import SettingsService
     svc = SettingsService(db)
+    svc.set_setting("openai_api_key", "sk-test")
     svc.get_or_create_nick_settings(nick_live_id=1)
-    updated = svc.update_nick_settings(nick_live_id=1, ai_reply_enabled=True)
-    assert updated.ai_reply_enabled is True
-    assert updated.auto_reply_enabled is False  # unchanged
+    updated = svc.update_nick_settings(nick_live_id=1, reply_mode="ai")
+    assert updated.reply_mode == "ai"
+    assert updated.auto_post_enabled is False  # unchanged
