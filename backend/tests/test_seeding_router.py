@@ -34,6 +34,8 @@ def user():
         db.expunge(u)
     _override_user(u)
     yield u
+    from app.services.seeding_scheduler import seeding_scheduler
+    seeding_scheduler.stop_all()
     app.dependency_overrides.clear()
     with SessionLocal() as db:
         # Collect nick ids for this user before deleting dependents
@@ -265,3 +267,87 @@ def test_manual_send_host_config_missing(user):
         })
     assert r.status_code == 400
     assert "host" in r.json()["detail"].lower()
+
+
+# ---------- Auto run + log endpoint tests ----------
+
+def test_auto_start_rejects_without_host_config(user):
+    with SessionLocal() as db:
+        nick = NickLive(user_id=user.id, name="h", shopee_user_id=1,
+                        shop_id=None, avatar=None, cookies="c")
+        db.add(nick); db.commit(); db.refresh(nick)
+        nick_id = nick.id
+    c = TestClient(app)
+    r = c.post("/api/seeding/clones",
+               json={"user": {"id": 1, "name": "A"}, "cookies": "c"})
+    clone_id = r.json()["id"]
+
+    r = c.post("/api/seeding/auto/start", json={
+        "nick_live_id": nick_id,
+        "shopee_session_id": 999,
+        "clone_ids": [clone_id],
+        "min_interval_sec": 30, "max_interval_sec": 60,
+    })
+    assert r.status_code == 400
+
+
+def test_auto_start_and_stop(user, monkeypatch):
+    nick_id = _make_nick_with_host_config(user.id)
+    c = TestClient(app)
+    r = c.post("/api/seeding/clones",
+               json={"user": {"id": 1, "name": "A"}, "cookies": "c"})
+    clone_id = r.json()["id"]
+
+    from app.services.seeding_scheduler import seeding_scheduler
+
+    # Capture the log_session_id that start() is called with, and
+    # stub is_running to return True for that session so the status
+    # endpoint sees it as running (TestClient doesn't keep asyncio tasks
+    # alive between requests).
+    started_ids: list[int] = []
+    original_start = seeding_scheduler.start
+
+    def fake_start(cfg):
+        started_ids.append(cfg.log_session_id)
+        # record the config so _configs is populated (needed by status endpoint)
+        seeding_scheduler._configs[cfg.log_session_id] = cfg
+
+    monkeypatch.setattr(seeding_scheduler, "start", fake_start)
+    monkeypatch.setattr(seeding_scheduler, "is_running",
+                        lambda sid: sid in started_ids)
+
+    r = c.post("/api/seeding/auto/start", json={
+        "nick_live_id": nick_id,
+        "shopee_session_id": 999,
+        "clone_ids": [clone_id],
+        "min_interval_sec": 30, "max_interval_sec": 60,
+    })
+    assert r.status_code == 200, r.text
+    log_session_id = r.json()["log_session_id"]
+
+    r = c.get(f"/api/seeding/auto/status?log_session_id={log_session_id}")
+    assert r.status_code == 200
+    assert r.json()["running"] is True
+
+    r = c.post("/api/seeding/auto/stop", json={"log_session_id": log_session_id})
+    assert r.status_code == 200
+
+
+def test_logs_endpoints(user):
+    with SessionLocal() as db:
+        nick = NickLive(user_id=user.id, name="h", shopee_user_id=1,
+                        shop_id=None, avatar=None, cookies="c")
+        db.add(nick); db.commit(); db.refresh(nick)
+        ls = SeedingLogSession(
+            user_id=user.id, nick_live_id=nick.id,
+            shopee_session_id=1, mode="manual",
+        )
+        db.add(ls); db.commit(); db.refresh(ls)
+
+    c = TestClient(app)
+    r = c.get("/api/seeding/log-sessions")
+    assert r.status_code == 200
+    assert any(s["id"] == ls.id for s in r.json())
+
+    r = c.get(f"/api/seeding/logs?log_session_id={ls.id}")
+    assert r.status_code == 200

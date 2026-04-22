@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.nick_live import NickLive
+from app.models.settings import NickLiveSetting
 from app.models.seeding import (
     SeedingClone,
     SeedingCommentTemplate,
@@ -308,3 +310,169 @@ async def manual_send(
         return SeedingManualSendResponse(log_id=0, status="failed", error=str(e))
 
     return SeedingManualSendResponse(log_id=log.id, status="success", error=None)
+
+
+# ---------- Auto run ----------
+
+@router.post("/auto/start", response_model=SeedingAutoStartResponse)
+async def auto_start(
+    payload: SeedingAutoStartRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SeedingAutoStartResponse:
+    nick = _owned_nick(db, payload.nick_live_id, current_user.id)
+
+    settings = db.query(NickLiveSetting).filter(
+        NickLiveSetting.nick_live_id == nick.id
+    ).first()
+    if settings is None or not settings.host_config:
+        raise HTTPException(
+            status_code=400,
+            detail="Nick host chưa setup host_config. Vào LiveScan → Host → Get Credentials",
+        )
+
+    for cid in payload.clone_ids:
+        _owned_clone(db, cid, current_user.id)
+
+    existing = (db.query(SeedingLogSession)
+                .filter(SeedingLogSession.user_id == current_user.id,
+                        SeedingLogSession.shopee_session_id == payload.shopee_session_id,
+                        SeedingLogSession.mode == "auto",
+                        SeedingLogSession.stopped_at.is_(None))
+                .first())
+    if existing is not None and seeding_scheduler.is_running(existing.id):
+        raise HTTPException(
+            status_code=409,
+            detail="Session đang seed, stop trước rồi start lại",
+        )
+
+    log_session = SeedingLogSession(
+        user_id=current_user.id,
+        nick_live_id=payload.nick_live_id,
+        shopee_session_id=payload.shopee_session_id,
+        mode="auto",
+    )
+    db.add(log_session); db.commit(); db.refresh(log_session)
+
+    cfg = SeedingRunConfig(
+        log_session_id=log_session.id,
+        user_id=current_user.id,
+        nick_live_id=payload.nick_live_id,
+        shopee_session_id=payload.shopee_session_id,
+        clone_ids=tuple(payload.clone_ids),
+        min_interval_sec=payload.min_interval_sec,
+        max_interval_sec=payload.max_interval_sec,
+    )
+    seeding_scheduler.start(cfg)
+    return SeedingAutoStartResponse(log_session_id=log_session.id, status="started")
+
+
+@router.post("/auto/stop")
+async def auto_stop(
+    payload: SeedingAutoStopRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    row = (db.query(SeedingLogSession)
+           .filter(SeedingLogSession.id == payload.log_session_id,
+                   SeedingLogSession.user_id == current_user.id)
+           .first())
+    if row is None:
+        raise HTTPException(status_code=404, detail="Log session not found")
+    await seeding_scheduler.stop(row.id)
+    return {"status": "stopped"}
+
+
+@router.get("/auto/status", response_model=SeedingRunStatus)
+def auto_status(
+    log_session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SeedingRunStatus:
+    row = (db.query(SeedingLogSession)
+           .filter(SeedingLogSession.id == log_session_id,
+                   SeedingLogSession.user_id == current_user.id)
+           .first())
+    if row is None:
+        raise HTTPException(status_code=404, detail="Log session not found")
+    running = seeding_scheduler.is_running(log_session_id)
+    cfg = seeding_scheduler._configs.get(log_session_id)
+    return SeedingRunStatus(
+        log_session_id=log_session_id,
+        running=running,
+        nick_live_id=row.nick_live_id,
+        shopee_session_id=row.shopee_session_id,
+        clone_ids=list(cfg.clone_ids) if cfg else [],
+        min_interval_sec=cfg.min_interval_sec if cfg else 0,
+        max_interval_sec=cfg.max_interval_sec if cfg else 0,
+        started_at=row.started_at,
+        stopped_at=row.stopped_at,
+    )
+
+
+@router.get("/auto/running", response_model=list[SeedingRunStatus])
+def auto_running(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[SeedingRunStatus]:
+    configs = seeding_scheduler.running_configs(current_user.id)
+    out: list[SeedingRunStatus] = []
+    for cfg in configs:
+        row = db.query(SeedingLogSession).filter(
+            SeedingLogSession.id == cfg.log_session_id
+        ).first()
+        if row is None:
+            continue
+        out.append(SeedingRunStatus(
+            log_session_id=cfg.log_session_id,
+            running=True,
+            nick_live_id=cfg.nick_live_id,
+            shopee_session_id=cfg.shopee_session_id,
+            clone_ids=list(cfg.clone_ids),
+            min_interval_sec=cfg.min_interval_sec,
+            max_interval_sec=cfg.max_interval_sec,
+            started_at=row.started_at,
+            stopped_at=row.stopped_at,
+        ))
+    return out
+
+
+# ---------- Logs ----------
+
+@router.get("/log-sessions", response_model=list[SeedingLogSessionResponse])
+def list_log_sessions(
+    nick_live_id: int | None = None,
+    mode: Literal["manual", "auto"] | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[SeedingLogSession]:
+    q = db.query(SeedingLogSession).filter(
+        SeedingLogSession.user_id == current_user.id
+    )
+    if nick_live_id is not None:
+        q = q.filter(SeedingLogSession.nick_live_id == nick_live_id)
+    if mode is not None:
+        q = q.filter(SeedingLogSession.mode == mode)
+    return q.order_by(SeedingLogSession.started_at.desc()).limit(200).all()
+
+
+@router.get("/logs", response_model=list[SeedingLogResponse])
+def list_logs(
+    log_session_id: int,
+    page: int = 1,
+    page_size: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[SeedingLog]:
+    ls = (db.query(SeedingLogSession)
+          .filter(SeedingLogSession.id == log_session_id,
+                  SeedingLogSession.user_id == current_user.id)
+          .first())
+    if ls is None:
+        raise HTTPException(status_code=404, detail="Log session not found")
+    page = max(1, page)
+    page_size = max(1, min(page_size, 200))
+    return (db.query(SeedingLog)
+            .filter(SeedingLog.seeding_log_session_id == log_session_id)
+            .order_by(SeedingLog.sent_at.desc())
+            .offset((page - 1) * page_size).limit(page_size).all())
