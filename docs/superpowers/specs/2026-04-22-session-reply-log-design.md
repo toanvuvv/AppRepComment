@@ -79,44 +79,15 @@ Response: `{"deleted": <int>}`. Nếu nick không thuộc user → `deleted=0` (
 
 Quyết định: trả `404` khi `nick_live_id` không thuộc user — consistent với semantics "không tìm thấy tài nguyên của bạn".
 
-### 2. Retention janitor (`backend/app/services/reply_log_janitor.py`)
+### 2. Retention → 3 ngày (sửa config, không tạo service mới)
 
-File mới. Mô hình giống `reply_log_writer` (module-level singleton, async task, start/stop trong lifespan).
+Codebase đã có `_reply_log_cleanup_loop` trong `backend/app/main.py` chạy mỗi `REPLY_LOG_CLEANUP_INTERVAL_SEC` (1h), xóa row `created_at < now - REPLY_LOG_RETENTION_HOURS`.
 
-```python
-class ReplyLogJanitor:
-    def __init__(self, interval_sec: float = 3600.0, retention_days: int = 3) -> None:
-        self._interval = interval_sec
-        self._retention = retention_days
-        self._task: asyncio.Task | None = None
-        self._stopping = asyncio.Event()
+**Thay đổi duy nhất:** trong `backend/app/config.py`, đổi `REPLY_LOG_RETENTION_HOURS: int = 24` → `72`.
 
-    async def start(self) -> None: ...
-    async def stop(self) -> None: ...
-    async def _loop(self) -> None:
-        while not self._stopping.is_set():
-            await asyncio.sleep(self._interval)
-            await asyncio.to_thread(self._purge_sync)
+**Update comment trong `backend/app/models/reply_log.py`:** đổi "Retained ~24h" → "Retained 3 days (72h) via main._reply_log_cleanup_loop".
 
-    def _purge_sync(self) -> None:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=self._retention)
-        with SessionLocal() as db:
-            deleted = (
-                db.query(ReplyLog)
-                .filter(ReplyLog.created_at < cutoff)
-                .delete(synchronize_session=False)
-            )
-            db.commit()
-        logger.info("ReplyLogJanitor purged %d rows older than %s", deleted, cutoff)
-
-reply_log_janitor = ReplyLogJanitor()
-```
-
-**Lifespan hook trong `backend/app/main.py`:** thêm `await reply_log_janitor.start()` sau `reply_log_writer.start()`, và `await reply_log_janitor.stop()` trong shutdown.
-
-**Chạy purge 1 lần ngay khi start** (trước khi vào loop sleep) để không phải đợi 1 giờ lần đầu.
-
-**Update comment trong `backend/app/models/reply_log.py`:** đổi "Retained ~24h" → "Retained 3 days via ReplyLogJanitor".
+Không thêm file service mới.
 
 ### 3. Frontend API client (`frontend/src/api/replyLogs.ts`)
 
