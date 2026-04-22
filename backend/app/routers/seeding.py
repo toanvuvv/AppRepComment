@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
@@ -231,3 +232,79 @@ def bulk_create_templates(
     for r in created:
         db.refresh(r)
     return created
+
+
+# ---------- Manual send ----------
+
+def _find_or_create_manual_session(
+    db: Session, *, user_id: int, nick_live_id: int, shopee_session_id: int,
+) -> SeedingLogSession:
+    today_utc = datetime.now(timezone.utc).date()
+    row = (
+        db.query(SeedingLogSession)
+        .filter(
+            SeedingLogSession.user_id == user_id,
+            SeedingLogSession.nick_live_id == nick_live_id,
+            SeedingLogSession.shopee_session_id == shopee_session_id,
+            SeedingLogSession.mode == "manual",
+        )
+        .order_by(SeedingLogSession.started_at.desc())
+        .first()
+    )
+    if row is not None and row.started_at.date() == today_utc:
+        return row
+    row = SeedingLogSession(
+        user_id=user_id,
+        nick_live_id=nick_live_id,
+        shopee_session_id=shopee_session_id,
+        mode="manual",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.post("/manual/send", response_model=SeedingManualSendResponse)
+async def manual_send(
+    payload: SeedingManualSendRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SeedingManualSendResponse:
+    _owned_clone(db, payload.clone_id, current_user.id)
+    _owned_nick(db, payload.nick_live_id, current_user.id)
+
+    log_session = _find_or_create_manual_session(
+        db,
+        user_id=current_user.id,
+        nick_live_id=payload.nick_live_id,
+        shopee_session_id=payload.shopee_session_id,
+    )
+
+    try:
+        log = await seeding_sender.send(
+            clone_id=payload.clone_id,
+            nick_live_id=payload.nick_live_id,
+            shopee_session_id=payload.shopee_session_id,
+            content=payload.content,
+            template_id=None,
+            mode="manual",
+            log_session_id=log_session.id,
+        )
+    except CloneRateLimitedError as e:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "retry_after_sec": e.retry_after_sec,
+                "message": f"Clone vừa gửi, chờ {e.retry_after_sec}s",
+            },
+        )
+    except HostConfigMissingError:
+        raise HTTPException(
+            status_code=400,
+            detail="Nick host chưa setup host_config. Vào LiveScan → Host → Get Credentials",
+        )
+    except RuntimeError as e:
+        return SeedingManualSendResponse(log_id=0, status="failed", error=str(e))
+
+    return SeedingManualSendResponse(log_id=log.id, status="success", error=None)
