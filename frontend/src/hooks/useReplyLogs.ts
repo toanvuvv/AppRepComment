@@ -52,7 +52,8 @@ export function buildLogKey(
 
 export function useReplyLogs(
   nickLiveId: number | null,
-  enabled: boolean
+  enabled: boolean,
+  sessionId: number | null = null
 ): UseReplyLogsResult {
   const [logs, setLogs] = useState<ReplyLog[]>([]);
   const [stats, setStats] = useState<ReplyLogStats | null>(null);
@@ -68,7 +69,11 @@ export function useReplyLogs(
     if (nickLiveId === null) return;
     try {
       const [logList, statResp] = await Promise.all([
-        listReplyLogs({ nick_live_id: nickLiveId, limit: LOG_LIMIT }),
+        listReplyLogs({
+          nick_live_id: nickLiveId,
+          session_id: sessionId ?? undefined,
+          limit: LOG_LIMIT,
+        }),
         getReplyLogStats(nickLiveId),
       ]);
       if (cancelledRef.current) return;
@@ -78,7 +83,7 @@ export function useReplyLogs(
     } catch {
       // Silent — polling will retry
     }
-  }, [nickLiveId]);
+  }, [nickLiveId, sessionId]);
 
   const refresh = useCallback(() => {
     fetchOnce();
@@ -109,7 +114,7 @@ export function useReplyLogs(
         timerRef.current = null;
       }
     };
-  }, [enabled, nickLiveId, fetchOnce]);
+  }, [enabled, nickLiveId, sessionId, fetchOnce]);
 
   return { logs, stats, index, refresh };
 }
