@@ -20,7 +20,8 @@ from app.dependencies import get_current_user
 from app.models.nick_live import NickLive
 from app.models.reply_log import ReplyLog
 from app.models.user import User
-from app.schemas.reply_log import ReplyLogResponse, ReplyLogStats
+from sqlalchemy import func
+from app.schemas.reply_log import ReplyLogResponse, ReplyLogSessionSummary, ReplyLogStats
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,38 @@ def list_reply_logs(
         .limit(limit)
         .all()
     )
+
+
+@router.get("/sessions", response_model=list[ReplyLogSessionSummary])
+def list_reply_log_sessions(
+    nick_live_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[ReplyLogSessionSummary]:
+    """Group reply logs theo session_id cho 1 nick. Newest session first."""
+    owned = _owned_nick_ids(current_user.id, db)
+    rows = (
+        db.query(
+            ReplyLog.session_id.label("session_id"),
+            func.min(ReplyLog.created_at).label("first_at"),
+            func.max(ReplyLog.created_at).label("last_at"),
+            func.count(ReplyLog.id).label("count"),
+        )
+        .filter(ReplyLog.nick_live_id == nick_live_id)
+        .filter(ReplyLog.nick_live_id.in_(owned))
+        .group_by(ReplyLog.session_id)
+        .order_by(func.max(ReplyLog.created_at).desc())
+        .all()
+    )
+    return [
+        ReplyLogSessionSummary(
+            session_id=r.session_id,
+            first_at=r.first_at,
+            last_at=r.last_at,
+            count=r.count,
+        )
+        for r in rows
+    ]
 
 
 @router.get("/stats", response_model=ReplyLogStats)
