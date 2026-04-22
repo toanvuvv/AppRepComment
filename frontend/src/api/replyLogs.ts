@@ -45,6 +45,7 @@ export interface ReplyLogStats {
 
 export interface ListReplyLogsParams {
   nick_live_id?: number;
+  session_id?: number;
   outcome?: ReplyOutcome;
   since?: string;
   until?: string;
@@ -67,5 +68,31 @@ export async function getReplyLogStats(
   if (nickLiveId !== undefined) params.nick_live_id = nickLiveId;
   if (since) params.since = since;
   const res = await apiClient.get("/reply-logs/stats", { params });
+  return res.data;
+}
+
+export interface ReplyLogSession {
+  session_id: number;
+  first_at: string;
+  last_at: string;
+  count: number;
+}
+
+export async function listReplyLogSessions(
+  nickLiveId: number
+): Promise<ReplyLogSession[]> {
+  const res = await apiClient.get("/reply-logs/sessions", {
+    params: { nick_live_id: nickLiveId },
+  });
+  return res.data;
+}
+
+export async function deleteReplyLogSession(
+  nickLiveId: number,
+  sessionId: number
+): Promise<{ deleted: number }> {
+  const res = await apiClient.delete("/reply-logs", {
+    params: { nick_live_id: nickLiveId, session_id: sessionId },
+  });
   return res.data;
 }
