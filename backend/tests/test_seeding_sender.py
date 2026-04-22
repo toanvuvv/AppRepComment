@@ -33,11 +33,14 @@ async def test_send_builds_type100_body_with_host_credentials():
         return _FakeResp(200)
 
     with patch.object(sender, "_resolve_host_credentials",
-                      return_value={"uuid": "UUID1", "usersig": "SIG1"}), \
-         patch.object(sender, "_load_clone", return_value=MagicMock(
-             id=7, cookies="SPC_EC=c", last_sent_at=None)), \
-         patch.object(sender, "_write_log", return_value=SeedingLog(id=99)), \
-         patch.object(sender, "_touch_clone_last_sent", return_value=None), \
+                      new=AsyncMock(return_value={"uuid": "UUID1", "usersig": "SIG1"})), \
+         patch.object(sender, "_load_clone",
+                      new=AsyncMock(return_value=MagicMock(
+                          id=7, cookies="SPC_EC=c", last_sent_at=None))), \
+         patch.object(sender, "_write_log",
+                      new=AsyncMock(return_value=SeedingLog(id=99))), \
+         patch.object(sender, "_touch_clone_last_sent",
+                      new=AsyncMock(return_value=None)), \
          patch("app.services.seeding_sender.get_client") as get_client, \
          patch("app.services.seeding_sender.shopee_limiter") as limiter:
         limiter.acquire = AsyncMock(return_value=None)
@@ -68,8 +71,9 @@ async def test_send_manual_rate_limited_raises():
     sender = SeedingSender()
     last = datetime.now(timezone.utc) - timedelta(seconds=CLONE_FLOOR_SEC - 3)
 
-    with patch.object(sender, "_load_clone", return_value=MagicMock(
-            id=7, cookies="c", last_sent_at=last)):
+    with patch.object(sender, "_load_clone",
+                      new=AsyncMock(return_value=MagicMock(
+                          id=7, cookies="c", last_sent_at=last))):
         with pytest.raises(CloneRateLimitedError) as ei:
             await sender.send(
                 clone_id=7, nick_live_id=1, shopee_session_id=1,
@@ -84,9 +88,11 @@ async def test_send_auto_rate_limited_writes_log_returns():
     last = datetime.now(timezone.utc)
     written_log = SeedingLog(id=123, status="rate_limited")
 
-    with patch.object(sender, "_load_clone", return_value=MagicMock(
-            id=7, cookies="c", last_sent_at=last)), \
-         patch.object(sender, "_write_log", return_value=written_log) as wl:
+    with patch.object(sender, "_load_clone",
+                      new=AsyncMock(return_value=MagicMock(
+                          id=7, cookies="c", last_sent_at=last))), \
+         patch.object(sender, "_write_log",
+                      new=AsyncMock(return_value=written_log)) as wl:
         log = await sender.send(
             clone_id=7, nick_live_id=1, shopee_session_id=1,
             content="x", template_id=None, mode="auto", log_session_id=1,
@@ -99,10 +105,11 @@ async def test_send_auto_rate_limited_writes_log_returns():
 async def test_send_host_config_missing_raises_manual():
     sender = SeedingSender()
 
-    with patch.object(sender, "_load_clone", return_value=MagicMock(
-            id=7, cookies="c", last_sent_at=None)), \
+    with patch.object(sender, "_load_clone",
+                      new=AsyncMock(return_value=MagicMock(
+                          id=7, cookies="c", last_sent_at=None))), \
          patch.object(sender, "_resolve_host_credentials",
-                      side_effect=HostConfigMissingError()):
+                      new=AsyncMock(side_effect=HostConfigMissingError())):
         with pytest.raises(HostConfigMissingError):
             await sender.send(
                 clone_id=7, nick_live_id=1, shopee_session_id=1,
@@ -119,11 +126,14 @@ async def test_send_shopee_failure_writes_failed_log_auto():
         return _FakeResp(500, {"err_code": 99})
 
     with patch.object(sender, "_resolve_host_credentials",
-                      return_value={"uuid": "U", "usersig": "S"}), \
-         patch.object(sender, "_load_clone", return_value=MagicMock(
-             id=7, cookies="c", last_sent_at=None)), \
-         patch.object(sender, "_write_log", return_value=written), \
-         patch.object(sender, "_touch_clone_last_sent", return_value=None), \
+                      new=AsyncMock(return_value={"uuid": "U", "usersig": "S"})), \
+         patch.object(sender, "_load_clone",
+                      new=AsyncMock(return_value=MagicMock(
+                          id=7, cookies="c", last_sent_at=None))), \
+         patch.object(sender, "_write_log",
+                      new=AsyncMock(return_value=written)), \
+         patch.object(sender, "_touch_clone_last_sent",
+                      new=AsyncMock(return_value=None)), \
          patch("app.services.seeding_sender.get_client") as get_client, \
          patch("app.services.seeding_sender.shopee_limiter") as limiter:
         limiter.acquire = AsyncMock(return_value=None)
@@ -136,3 +146,70 @@ async def test_send_shopee_failure_writes_failed_log_auto():
             content="x", template_id=None, mode="auto", log_session_id=1,
         )
     assert log.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_post_retries_on_network_exception():
+    """First-attempt network exception must retry before failing."""
+    import httpx
+    sender = SeedingSender()
+    calls = {"n": 0}
+
+    async def flaky_post(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ConnectError("boom")
+        return _FakeResp(200)
+
+    with patch.object(sender, "_resolve_host_credentials",
+                      new=AsyncMock(return_value={"uuid": "U", "usersig": "S"})), \
+         patch.object(sender, "_load_clone",
+                      new=AsyncMock(return_value=MagicMock(id=7, cookies="c", last_sent_at=None))), \
+         patch.object(sender, "_write_log",
+                      new=AsyncMock(return_value=SeedingLog(id=1, status="success"))), \
+         patch.object(sender, "_touch_clone_last_sent", new=AsyncMock(return_value=None)), \
+         patch("app.services.seeding_sender.get_client") as get_client, \
+         patch("app.services.seeding_sender.shopee_limiter") as limiter:
+        limiter.acquire = AsyncMock(return_value=None)
+        client = MagicMock()
+        client.post = AsyncMock(side_effect=flaky_post)
+        get_client.return_value = client
+
+        log = await sender.send(
+            clone_id=7, nick_live_id=1, shopee_session_id=1,
+            content="x", template_id=None, mode="auto", log_session_id=1,
+        )
+    assert calls["n"] == 2  # retried
+    assert log.status == "success"
+
+
+@pytest.mark.asyncio
+async def test_post_exception_message_does_not_leak_cookie():
+    """Ensure we don't log/return the raw exception message which may contain cookies."""
+    import httpx
+    sender = SeedingSender()
+
+    async def always_raise(*a, **kw):
+        raise httpx.ConnectError("Connection failed to host. Headers: cookie=SPC_EC=SECRET")
+
+    with patch.object(sender, "_resolve_host_credentials",
+                      new=AsyncMock(return_value={"uuid": "U", "usersig": "S"})), \
+         patch.object(sender, "_load_clone",
+                      new=AsyncMock(return_value=MagicMock(id=7, cookies="SPC_EC=SECRET", last_sent_at=None))), \
+         patch.object(sender, "_write_log",
+                      new=AsyncMock(return_value=SeedingLog(id=1, status="failed", error="x"))) as wl, \
+         patch.object(sender, "_touch_clone_last_sent", new=AsyncMock(return_value=None)), \
+         patch("app.services.seeding_sender.get_client") as get_client, \
+         patch("app.services.seeding_sender.shopee_limiter") as limiter:
+        limiter.acquire = AsyncMock(return_value=None)
+        client = MagicMock()
+        client.post = AsyncMock(side_effect=always_raise)
+        get_client.return_value = client
+
+        await sender.send(
+            clone_id=7, nick_live_id=1, shopee_session_id=1,
+            content="x", template_id=None, mode="auto", log_session_id=1,
+        )
+    # The error written to the log should not include "SECRET" from the cookie.
+    written_error = wl.call_args.kwargs.get("error", "")
+    assert "SECRET" not in written_error

@@ -59,7 +59,7 @@ class SeedingSender:
         mode: Literal["manual", "auto"],
         log_session_id: int,
     ) -> SeedingLog:
-        clone = self._load_clone(clone_id)
+        clone = await self._load_clone(clone_id)
         if clone is None:
             raise ValueError(f"clone {clone_id} not found")
 
@@ -67,7 +67,7 @@ class SeedingSender:
         if retry_after > 0:
             if mode == "manual":
                 raise CloneRateLimitedError(retry_after)
-            return self._write_log(
+            return await self._write_log(
                 log_session_id=log_session_id, clone_id=clone_id,
                 template_id=template_id, content=content,
                 status="rate_limited",
@@ -75,11 +75,11 @@ class SeedingSender:
             )
 
         try:
-            creds = self._resolve_host_credentials(nick_live_id)
+            creds = await self._resolve_host_credentials(nick_live_id)
         except HostConfigMissingError:
             if mode == "manual":
                 raise
-            return self._write_log(
+            return await self._write_log(
                 log_session_id=log_session_id, clone_id=clone_id,
                 template_id=template_id, content=content,
                 status="failed", error="host_config_missing",
@@ -92,22 +92,22 @@ class SeedingSender:
         status, err = await self._post_with_retry(url, headers, body)
 
         if status == 200 and err is None:
-            self._touch_clone_last_sent(clone_id)
-            return self._write_log(
+            await self._touch_clone_last_sent(clone_id)
+            return await self._write_log(
                 log_session_id=log_session_id, clone_id=clone_id,
                 template_id=template_id, content=content,
                 status="success", error=None,
             )
 
         if mode == "manual":
-            self._write_log(
+            await self._write_log(
                 log_session_id=log_session_id, clone_id=clone_id,
                 template_id=template_id, content=content,
                 status="failed", error=err or f"http_{status}",
             )
             raise RuntimeError(err or f"http_{status}")
 
-        return self._write_log(
+        return await self._write_log(
             log_session_id=log_session_id, clone_id=clone_id,
             template_id=template_id, content=content,
             status="failed", error=err or f"http_{status}",
@@ -122,13 +122,40 @@ class SeedingSender:
         remaining = CLONE_FLOOR_SEC - int(delta.total_seconds())
         return max(0, remaining)
 
-    def _load_clone(self, clone_id: int) -> SeedingClone | None:
+    # --- async wrappers (Fix 1: offload sync DB calls via asyncio.to_thread) ---
+
+    async def _load_clone(self, clone_id: int) -> SeedingClone | None:
+        return await asyncio.to_thread(self._load_clone_sync, clone_id)
+
+    async def _resolve_host_credentials(self, nick_live_id: int) -> dict[str, str]:
+        return await asyncio.to_thread(self._resolve_host_credentials_sync, nick_live_id)
+
+    async def _touch_clone_last_sent(self, clone_id: int) -> None:
+        await asyncio.to_thread(self._touch_clone_last_sent_sync, clone_id)
+
+    async def _write_log(
+        self, *, log_session_id: int, clone_id: int, template_id: int | None,
+        content: str, status: str, error: str | None,
+    ) -> SeedingLog:
+        return await asyncio.to_thread(
+            self._write_log_sync,
+            log_session_id=log_session_id,
+            clone_id=clone_id,
+            template_id=template_id,
+            content=content,
+            status=status,
+            error=error,
+        )
+
+    # --- sync DB helpers (called only via asyncio.to_thread) ---
+
+    def _load_clone_sync(self, clone_id: int) -> SeedingClone | None:
         with SessionLocal() as db:
             return db.query(SeedingClone).filter(
                 SeedingClone.id == clone_id
             ).first()
 
-    def _resolve_host_credentials(self, nick_live_id: int) -> dict[str, str]:
+    def _resolve_host_credentials_sync(self, nick_live_id: int) -> dict[str, str]:
         with SessionLocal() as db:
             row = db.query(NickLiveSetting).filter(
                 NickLiveSetting.nick_live_id == nick_live_id
@@ -144,6 +171,33 @@ class SeedingSender:
         if not uuid or not usersig:
             raise HostConfigMissingError()
         return {"uuid": uuid, "usersig": usersig}
+
+    def _touch_clone_last_sent_sync(self, clone_id: int) -> None:
+        with SessionLocal() as db:
+            row = db.query(SeedingClone).filter(
+                SeedingClone.id == clone_id
+            ).first()
+            if row is not None:
+                row.last_sent_at = datetime.now(timezone.utc)
+                db.commit()
+
+    def _write_log_sync(
+        self, *, log_session_id: int, clone_id: int, template_id: int | None,
+        content: str, status: str, error: str | None,
+    ) -> SeedingLog:
+        with SessionLocal() as db:
+            row = SeedingLog(
+                seeding_log_session_id=log_session_id,
+                clone_id=clone_id,
+                template_id=template_id,
+                content=content,
+                status=status,
+                error=error,
+            )
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+            return row
 
     def _build_body(self, content: str, creds: dict[str, str]) -> dict[str, Any]:
         inner = {"type": 100, "content": content}
@@ -163,12 +217,9 @@ class SeedingSender:
     async def _post_with_retry(
         self, url: str, headers: dict[str, str], body: dict[str, Any],
     ) -> tuple[int, str | None]:
-        attempts = 0
-        max_attempts = 2
         last_status = 0
         last_err: str | None = None
-        while attempts < max_attempts:
-            attempts += 1
+        for attempt in range(1, 3):  # attempts 1 and 2
             try:
                 await shopee_limiter.acquire()
                 client = get_client()
@@ -178,7 +229,7 @@ class SeedingSender:
                 last_status = resp.status_code
                 if last_status in (401, 403):
                     return last_status, "auth_expired"
-                if last_status == 429 and attempts < max_attempts:
+                if last_status == 429 and attempt < 2:
                     await asyncio.sleep(2.0)
                     continue
                 if last_status == 200:
@@ -189,37 +240,16 @@ class SeedingSender:
                         pass
                 return last_status, f"upstream_{last_status}"
             except Exception as e:
-                last_err = str(e)[:200]
-                logger.exception(f"seeding send error: {e}")
-                return 0, "request_failed"
+                last_err = type(e).__name__
+                logger.error(
+                    "seeding send error (attempt %d): %s",
+                    attempt, type(e).__name__,
+                )
+                if attempt < 2:
+                    await asyncio.sleep(0.5)
+                    continue
+                return 0, last_err or "request_failed"
         return last_status, last_err or "rate_limited"
-
-    def _touch_clone_last_sent(self, clone_id: int) -> None:
-        with SessionLocal() as db:
-            row = db.query(SeedingClone).filter(
-                SeedingClone.id == clone_id
-            ).first()
-            if row is not None:
-                row.last_sent_at = datetime.now(timezone.utc)
-                db.commit()
-
-    def _write_log(
-        self, *, log_session_id: int, clone_id: int, template_id: int | None,
-        content: str, status: str, error: str | None,
-    ) -> SeedingLog:
-        with SessionLocal() as db:
-            row = SeedingLog(
-                seeding_log_session_id=log_session_id,
-                clone_id=clone_id,
-                template_id=template_id,
-                content=content,
-                status=status,
-                error=error,
-            )
-            db.add(row)
-            db.commit()
-            db.refresh(row)
-            return row
 
 
 seeding_sender = SeedingSender()
