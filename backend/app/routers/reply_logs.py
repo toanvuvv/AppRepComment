@@ -43,6 +43,7 @@ def _owned_nick_ids(user_id: int, db: Session):
 @router.get("", response_model=list[ReplyLogResponse])
 def list_reply_logs(
     nick_live_id: int | None = None,
+    session_id: int | None = None,
     outcome: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
@@ -56,6 +57,8 @@ def list_reply_logs(
     q = db.query(ReplyLog).filter(ReplyLog.nick_live_id.in_(owned))
     if nick_live_id is not None:
         q = q.filter(ReplyLog.nick_live_id == nick_live_id)
+    if session_id is not None:
+        q = q.filter(ReplyLog.session_id == session_id)
     if outcome:
         q = q.filter(ReplyLog.outcome == outcome)
     if since is not None:

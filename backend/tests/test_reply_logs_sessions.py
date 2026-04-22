@@ -104,3 +104,21 @@ def test_list_sessions_ownership_hides_other_users_nicks():
     r = client.get(f"/api/reply-logs/sessions?nick_live_id={nick}", headers=_hdr(tok_owner))
     assert r.status_code == 200
     assert len(r.json()) == 1
+
+
+def test_list_logs_filters_by_session_id():
+    tok = _login("rls_owner")
+    nick = _make_nick(_user_id("rls_owner"))
+    now = datetime.now(timezone.utc)
+    _insert_log(nick, 100, now - timedelta(minutes=5))
+    _insert_log(nick, 100, now - timedelta(minutes=4))
+    _insert_log(nick, 200, now - timedelta(minutes=3))
+
+    r = client.get(
+        f"/api/reply-logs?nick_live_id={nick}&session_id=100",
+        headers=_hdr(tok),
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert len(data) == 2
+    assert all(row["session_id"] == 100 for row in data)
