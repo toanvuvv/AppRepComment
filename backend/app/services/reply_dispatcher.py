@@ -203,6 +203,19 @@ class ReplyDispatcher:
 
         settings = await nick_cache.get_settings(nick_live_id, SessionLocal)
 
+        # --- Self-reply guard (defense-in-depth) ---
+        # The scanner already filters self-posts before enqueue, but we
+        # re-check here so callers that bypass the scanner (e.g. future
+        # queue injectors) are also safe. See services.self_post_filter.
+        from app.services.self_post_filter import is_self_post
+        if is_self_post(comment, settings):
+            logger.debug(
+                "Dispatcher skipping self-post nick=%s uid=%s",
+                nick_live_id,
+                user_id,
+            )
+            return
+
         # --- Skip if nothing to do ---
         if settings.reply_mode == "none":
             return

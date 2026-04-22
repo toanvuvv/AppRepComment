@@ -17,6 +17,7 @@ from app.config import COMMENTS_HISTORY_MAX, POLL_INTERVAL_SEC, SEEN_IDS_MAX
 from app.services.exceptions import ShopeeAuthError, ShopeeRateLimitError
 from app.services.reply_dispatcher import dispatcher
 from app.services.reply_log_writer import reply_log_writer
+from app.services.self_post_filter import is_self_post
 from app.services.shopee_api import get_comments
 
 logger = logging.getLogger(__name__)
@@ -229,7 +230,35 @@ class CommentScanner:
                         new_items.append(c)
 
                     # Delegate reply handling — never blocks polling.
+                    # Self-post guard: fetch the cached per-nick settings
+                    # once per poll, then skip any comment posted by the
+                    # nick itself (host/moderator reply coming back).
+                    settings = None
+                    if new_items:
+                        from app.database import SessionLocal
+                        from app.services.nick_cache import nick_cache
+                        try:
+                            settings = await nick_cache.get_settings(
+                                nick_live_id, SessionLocal
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to load settings for self-post guard; "
+                                "falling through to dispatcher-level guard "
+                                "(nick=%s)",
+                                nick_live_id,
+                            )
+
                     for c in new_items:
+                        if settings is not None and is_self_post(c, settings):
+                            logger.debug(
+                                "Scanner skipping self-post nick=%s uid=%s",
+                                nick_live_id,
+                                c.get("userId")
+                                or c.get("user_id")
+                                or c.get("streamerId"),
+                            )
+                            continue
                         if not await dispatcher.enqueue(nick_live_id, c):
                             await reply_log_writer.log({
                                 "nick_live_id": nick_live_id,

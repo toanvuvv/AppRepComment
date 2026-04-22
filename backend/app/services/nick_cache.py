@@ -37,6 +37,9 @@ class NickSettingsSnapshot:
     knowledge_model: str | None
     knowledge_system_prompt: str
     banned_words: tuple[str, ...]
+    # Shopee user id of the nick owner; used to filter the nick's own
+    # host-side replies so we don't reply to our own messages (loop guard).
+    shopee_user_id: int | None = None
 
 
 class ProductSnapshot(NamedTuple):
@@ -186,6 +189,11 @@ class NickRuntimeCache:
                 knowledge_model=svc.get_knowledge_model(),
                 knowledge_system_prompt=svc.get_knowledge_system_prompt() or "",
                 banned_words=tuple(svc.get_banned_words()),
+                shopee_user_id=(
+                    int(nick_row.shopee_user_id)
+                    if nick_row is not None and nick_row.shopee_user_id is not None
+                    else None
+                ),
             )
             return snapshot
         finally:
