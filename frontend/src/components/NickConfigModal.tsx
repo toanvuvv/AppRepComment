@@ -14,6 +14,7 @@ import {
   Typography,
   Tag,
   Divider,
+  Alert,
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -594,12 +595,23 @@ export default function NickConfigModal({
     {
       key: "autopin",
       label: "Auto-pin",
-      children: (
+      children: (() => {
+        const hasKnowledge = products.length > 0;
+        return (
         <Space direction="vertical" style={{ width: "100%" }} size="middle">
+          {!hasKnowledge && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Chưa có Knowledge sản phẩm"
+              description="Auto-pin dùng item_id và shop_id từ Knowledge data. Hãy import sản phẩm ở tab Knowledge trước khi cấu hình Auto-pin."
+            />
+          )}
           <Space align="center">
             <Text strong>Auto-pin enabled:</Text>
             <Switch
               checked={autoPinEnabled}
+              disabled={!hasKnowledge}
               onChange={(val) => {
                 setAutoPinEnabled(val);
                 handleUpdateSettings({ auto_pin_enabled: val });
@@ -613,6 +625,7 @@ export default function NickConfigModal({
               min={1}
               max={60}
               value={pinMinMinutes}
+              disabled={!hasKnowledge}
               onChange={(v) => setPinMinMinutes(v ?? 5)}
               style={{ width: 80 }}
             />
@@ -622,6 +635,7 @@ export default function NickConfigModal({
               min={1}
               max={60}
               value={pinMaxMinutes}
+              disabled={!hasKnowledge}
               onChange={(v) => setPinMaxMinutes(v ?? 15)}
               style={{ width: 80 }}
             />
@@ -634,7 +648,7 @@ export default function NickConfigModal({
                   pin_max_interval_minutes: pinMaxMinutes,
                 })
               }
-              disabled={pinMinMinutes > pinMaxMinutes}
+              disabled={!hasKnowledge || pinMinMinutes > pinMaxMinutes}
             >
               Lưu
             </Button>
@@ -655,7 +669,7 @@ export default function NickConfigModal({
             <Button
               type="primary"
               icon={<PlayCircleOutlined />}
-              disabled={!autoPinEnabled || pinRunning || pinMinMinutes > pinMaxMinutes}
+              disabled={!hasKnowledge || !autoPinEnabled || pinRunning || pinMinMinutes > pinMaxMinutes}
               onClick={handleStartPin}
             >
               Bắt đầu Pin
@@ -670,7 +684,8 @@ export default function NickConfigModal({
             </Button>
           </Space>
         </Space>
-      ),
+        );
+      })(),
     },
     {
       key: "reply",
