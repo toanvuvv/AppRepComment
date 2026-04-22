@@ -19,7 +19,7 @@ REPLY_TIMEOUT_SEC: float = 10.0
 NICK_CACHE_TTL_SEC: float = 60.0
 
 # Reply log retention and batching
-REPLY_LOG_RETENTION_HOURS: int = 24
+REPLY_LOG_RETENTION_HOURS: int = 72  # 3 days
 REPLY_LOG_CLEANUP_INTERVAL_SEC: int = 3600  # cleanup runs every 1h
 REPLY_LOG_FLUSH_INTERVAL_SEC: float = 1.0
 REPLY_LOG_BATCH_SIZE: int = 100

@@ -9,9 +9,9 @@ from app.database import Base
 class ReplyLog(Base):
     """Persisted log of every reply attempt by the dispatcher.
 
-    Retained ~24h for debugging and monitoring. Populated by the reply
-    dispatcher for success, failure, dropped, cached-hit, circuit-open,
-    and no-config outcomes.
+    Retained 3 days (72h) via main._reply_log_cleanup_loop. Populated by
+    the reply dispatcher for success, failure, dropped, cached-hit,
+    circuit-open, and no-config outcomes.
     """
 
     __tablename__ = "reply_logs"
