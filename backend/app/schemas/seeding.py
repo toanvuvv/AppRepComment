@@ -25,6 +25,10 @@ class SeedingCloneCreate(BaseModel):
     @model_validator(mode="after")
     def _coerce_user(self) -> "SeedingCloneCreate":
         if self.user is not None:
+            if self.name is not None or self.shopee_user_id is not None:
+                raise ValueError(
+                    "Provide either flat fields (name, shopee_user_id) or nested user — not both"
+                )
             self.name = self.user.name
             self.shopee_user_id = self.user.id
             self.avatar = self.avatar or self.user.avatar
@@ -124,6 +128,7 @@ class SeedingRunStatus(BaseModel):
     max_interval_sec: int
     started_at: datetime
     stopped_at: datetime | None
+    model_config = {"from_attributes": True}
 
 
 # ---------- Logs ----------
@@ -155,6 +160,7 @@ class SeedingLogResponse(BaseModel):
 
 class CloneRateLimitedError(Exception):
     def __init__(self, retry_after_sec: int) -> None:
+        super().__init__(f"Rate limited — retry after {retry_after_sec}s")
         self.retry_after_sec = retry_after_sec
 
 

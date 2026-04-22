@@ -81,3 +81,21 @@ def test_auto_start_non_empty_clones():
             "min_interval_sec": 30,
             "max_interval_sec": 60,
         })
+
+
+def test_clone_rate_limited_error_has_message():
+    from app.schemas.seeding import CloneRateLimitedError
+    err = CloneRateLimitedError(retry_after_sec=30)
+    assert err.retry_after_sec == 30
+    assert "30" in str(err)
+
+
+def test_clone_create_rejects_both_forms():
+    from app.schemas.seeding import SeedingCloneCreate
+    with pytest.raises(ValidationError):
+        SeedingCloneCreate.model_validate({
+            "name": "flat",
+            "shopee_user_id": 1,
+            "user": {"id": 2, "name": "nested"},
+            "cookies": "c=1",
+        })
