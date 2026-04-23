@@ -105,10 +105,19 @@ class SeedingScheduler:
             return False
 
         clones = self._load_clones(list(cfg.clone_ids))
-        eligible = [c for c in clones if self._is_eligible(c.last_sent_at)]
+        active = [c for c in clones if not getattr(c, "auto_disabled", False)]
+
+        if not active:
+            logger.warning(
+                "seeding scheduler stopping sid=%s — all %d clone(s) auto-disabled",
+                cfg.log_session_id, len(clones),
+            )
+            return False
+
+        eligible = [c for c in active if self._is_eligible(c.last_sent_at)]
 
         if not eligible:
-            first_id = sorted(cfg.clone_ids)[0]
+            first_id = sorted(c.id for c in active)[0]
             self._write_rate_limited_log(
                 log_session_id=cfg.log_session_id,
                 clone_id=first_id,

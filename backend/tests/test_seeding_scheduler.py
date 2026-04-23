@@ -76,8 +76,8 @@ async def test_loop_picks_random_clone_and_template(monkeypatch):
 
     fake_templates = [MagicMock(id=10, enabled=True, content="a"),
                       MagicMock(id=11, enabled=True, content="b")]
-    fake_clones = [MagicMock(id=1, last_sent_at=None),
-                   MagicMock(id=2, last_sent_at=None)]
+    fake_clones = [MagicMock(id=1, last_sent_at=None, auto_disabled=False),
+                   MagicMock(id=2, last_sent_at=None, auto_disabled=False)]
 
     monkeypatch.setattr(scheduler, "_load_templates", lambda uid: fake_templates)
     monkeypatch.setattr(scheduler, "_load_clones", lambda ids: fake_clones)
@@ -109,7 +109,8 @@ async def test_loop_no_eligible_clone_writes_rate_limited(monkeypatch):
     monkeypatch.setattr(scheduler, "_load_templates",
                         lambda uid: [MagicMock(id=10, enabled=True, content="a")])
     monkeypatch.setattr(scheduler, "_load_clones",
-                        lambda ids: [MagicMock(id=1, last_sent_at=datetime.now(timezone.utc))])
+                        lambda ids: [MagicMock(id=1, last_sent_at=datetime.now(timezone.utc),
+                                               auto_disabled=False)])
     monkeypatch.setattr(scheduler, "_write_rate_limited_log",
                         lambda **kw: writes.append(kw))
     monkeypatch.setattr("app.services.seeding_scheduler.asyncio.sleep",
@@ -124,6 +125,55 @@ async def test_loop_no_eligible_clone_writes_rate_limited(monkeypatch):
 
     assert len(writes) == 1
     assert writes[0]["clone_id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_loop_stops_when_all_clones_auto_disabled(monkeypatch):
+    scheduler = SeedingScheduler()
+    monkeypatch.setattr(scheduler, "_load_templates",
+                        lambda uid: [MagicMock(id=10, enabled=True, content="a")])
+    monkeypatch.setattr(scheduler, "_load_clones",
+                        lambda ids: [MagicMock(id=1, last_sent_at=None, auto_disabled=True),
+                                     MagicMock(id=2, last_sent_at=None, auto_disabled=True)])
+    monkeypatch.setattr("app.services.seeding_scheduler.asyncio.sleep",
+                        AsyncMock(return_value=None))
+
+    cfg = SeedingRunConfig(
+        log_session_id=1, user_id=1, nick_live_id=1,
+        shopee_session_id=100, clone_ids=(1, 2),
+        min_interval_sec=10, max_interval_sec=10,
+    )
+    cont = await scheduler._iteration(cfg)
+    assert cont is False
+
+
+@pytest.mark.asyncio
+async def test_loop_skips_auto_disabled_clone(monkeypatch):
+    scheduler = SeedingScheduler()
+    calls = []
+
+    async def fake_send(**kw):
+        calls.append(kw)
+
+    monkeypatch.setattr("app.services.seeding_scheduler.seeding_sender.send",
+                        AsyncMock(side_effect=fake_send))
+    monkeypatch.setattr(scheduler, "_load_templates",
+                        lambda uid: [MagicMock(id=10, enabled=True, content="a")])
+    monkeypatch.setattr(scheduler, "_load_clones",
+                        lambda ids: [MagicMock(id=1, last_sent_at=None, auto_disabled=True),
+                                     MagicMock(id=2, last_sent_at=None, auto_disabled=False)])
+    monkeypatch.setattr("app.services.seeding_scheduler.asyncio.sleep",
+                        AsyncMock(return_value=None))
+
+    cfg = SeedingRunConfig(
+        log_session_id=1, user_id=1, nick_live_id=1,
+        shopee_session_id=100, clone_ids=(1, 2),
+        min_interval_sec=10, max_interval_sec=10,
+    )
+    await scheduler._iteration(cfg)
+
+    assert len(calls) == 1
+    assert calls[0]["clone_id"] == 2
 
 
 @pytest.mark.asyncio

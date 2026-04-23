@@ -7,15 +7,21 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from "antd";
-import { PlayCircleOutlined, StopOutlined, FileTextOutlined } from "@ant-design/icons";
+import {
+  PlayCircleOutlined,
+  StopOutlined,
+  FileTextOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useSeedingClones } from "../../hooks/useSeedingClones";
 import { useSeedingRuns } from "../../hooks/useSeedingRuns";
 import { SeedingLogDrawer } from "./SeedingLogDrawer";
-import type { SeedingRunStatus } from "../../api/seeding";
+import type { SeedingClone, SeedingRunStatus } from "../../api/seeding";
 
 const { Text } = Typography;
 
@@ -34,7 +40,7 @@ export function AutoRunnerTab({
   selectedNickLiveId,
   selectedShopeeSessionId,
 }: AutoRunnerTabProps) {
-  const { clones } = useSeedingClones();
+  const { clones, revive } = useSeedingClones();
   const { runs, start, stop } = useSeedingRuns();
 
   const [selectedCloneIds, setSelectedCloneIds] = useState<number[]>([]);
@@ -42,9 +48,41 @@ export function AutoRunnerTab({
   const [maxInterval, setMaxInterval] = useState<number>(30);
   const [starting, setStarting] = useState(false);
   const [stoppingId, setStoppingId] = useState<number | null>(null);
+  const [revivingId, setRevivingId] = useState<number | null>(null);
   const [drawerSessionId, setDrawerSessionId] = useState<number | null>(null);
 
-  const cloneOptions = clones.map((c) => ({ label: c.name, value: c.id }));
+  const renderHealthBadge = (c: SeedingClone) => {
+    if (c.auto_disabled) {
+      return (
+        <Tooltip title={c.last_error ?? "auto-disabled"}>
+          <Tag color="red">Tắt ({c.consecutive_failures} lỗi)</Tag>
+        </Tooltip>
+      );
+    }
+    if (c.consecutive_failures > 0) {
+      return (
+        <Tooltip title={c.last_error ?? "đang lỗi"}>
+          <Tag color="orange">Cảnh báo ({c.consecutive_failures})</Tag>
+        </Tooltip>
+      );
+    }
+    if (c.last_status === "success") {
+      return <Tag color="green">OK</Tag>;
+    }
+    return <Tag>Chưa gửi</Tag>;
+  };
+
+  const handleRevive = async (id: number) => {
+    setRevivingId(id);
+    try {
+      await revive(id);
+      message.success("Đã reset clone");
+    } catch {
+      message.error("Không reset được");
+    } finally {
+      setRevivingId(null);
+    }
+  };
 
   const handleStart = async () => {
     if (!selectedNickLiveId) {
@@ -193,11 +231,42 @@ export function AutoRunnerTab({
             <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
               Chọn clones tham gia
             </Text>
-            <Checkbox.Group
-              options={cloneOptions}
-              value={selectedCloneIds}
-              onChange={(vals) => setSelectedCloneIds(vals as number[])}
-            />
+            <Space direction="vertical" style={{ width: "100%" }}>
+              {clones.map((c) => {
+                const checked = selectedCloneIds.includes(c.id);
+                return (
+                  <Space key={c.id} align="center">
+                    <Checkbox
+                      checked={checked}
+                      disabled={c.auto_disabled}
+                      onChange={(e) => {
+                        setSelectedCloneIds((prev) =>
+                          e.target.checked
+                            ? [...prev, c.id]
+                            : prev.filter((x) => x !== c.id),
+                        );
+                      }}
+                    >
+                      {c.name}
+                    </Checkbox>
+                    {renderHealthBadge(c)}
+                    {(c.auto_disabled || c.consecutive_failures > 0) && (
+                      <Button
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        loading={revivingId === c.id}
+                        onClick={() => handleRevive(c.id)}
+                      >
+                        Reset
+                      </Button>
+                    )}
+                  </Space>
+                );
+              })}
+              {clones.length === 0 && (
+                <Text type="secondary">Chưa có clone nào</Text>
+              )}
+            </Space>
           </div>
 
           <Space align="end" wrap>

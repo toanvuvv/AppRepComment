@@ -134,6 +134,8 @@ async def test_send_shopee_failure_writes_failed_log_auto():
                       new=AsyncMock(return_value=written)), \
          patch.object(sender, "_touch_clone_last_sent",
                       new=AsyncMock(return_value=None)), \
+         patch.object(sender, "_record_failure",
+                      new=AsyncMock(return_value=None)), \
          patch("app.services.seeding_sender.get_client") as get_client, \
          patch("app.services.seeding_sender.shopee_limiter") as limiter:
         limiter.acquire = AsyncMock(return_value=None)
@@ -199,6 +201,7 @@ async def test_post_exception_message_does_not_leak_cookie():
          patch.object(sender, "_write_log",
                       new=AsyncMock(return_value=SeedingLog(id=1, status="failed", error="x"))) as wl, \
          patch.object(sender, "_touch_clone_last_sent", new=AsyncMock(return_value=None)), \
+         patch.object(sender, "_record_failure", new=AsyncMock(return_value=None)), \
          patch("app.services.seeding_sender.get_client") as get_client, \
          patch("app.services.seeding_sender.shopee_limiter") as limiter:
         limiter.acquire = AsyncMock(return_value=None)
@@ -213,3 +216,73 @@ async def test_post_exception_message_does_not_leak_cookie():
     # The error written to the log should not include "SECRET" from the cookie.
     written_error = wl.call_args.kwargs.get("error", "")
     assert "SECRET" not in written_error
+
+
+@pytest.mark.asyncio
+async def test_send_failure_calls_record_failure_with_error_code():
+    """Each auto-mode send failure must be recorded against the clone's health."""
+    sender = SeedingSender()
+
+    async def fake_post(*a, **kw):
+        return _FakeResp(401)
+
+    with patch.object(sender, "_resolve_host_credentials",
+                      new=AsyncMock(return_value={"uuid": "U", "usersig": "S"})), \
+         patch.object(sender, "_load_clone",
+                      new=AsyncMock(return_value=MagicMock(
+                          id=7, name="c7", cookies="c", last_sent_at=None))), \
+         patch.object(sender, "_write_log",
+                      new=AsyncMock(return_value=SeedingLog(id=1, status="failed"))), \
+         patch.object(sender, "_touch_clone_last_sent",
+                      new=AsyncMock(return_value=None)), \
+         patch.object(sender, "_record_failure",
+                      new=AsyncMock(return_value=None)) as rf, \
+         patch("app.services.seeding_sender.get_client") as get_client, \
+         patch("app.services.seeding_sender.shopee_limiter") as limiter:
+        limiter.acquire = AsyncMock(return_value=None)
+        client = MagicMock()
+        client.post = AsyncMock(side_effect=fake_post)
+        get_client.return_value = client
+
+        await sender.send(
+            clone_id=7, nick_live_id=1, shopee_session_id=1,
+            content="x", template_id=None, mode="auto", log_session_id=1,
+        )
+
+    rf.assert_awaited_once()
+    args = rf.call_args.args
+    assert args[0] == 7
+    assert "auth_expired" in args[1]
+
+
+@pytest.mark.asyncio
+async def test_send_success_not_counted_as_failure():
+    sender = SeedingSender()
+
+    async def fake_post(*a, **kw):
+        return _FakeResp(200)
+
+    with patch.object(sender, "_resolve_host_credentials",
+                      new=AsyncMock(return_value={"uuid": "U", "usersig": "S"})), \
+         patch.object(sender, "_load_clone",
+                      new=AsyncMock(return_value=MagicMock(
+                          id=7, name="c7", cookies="c", last_sent_at=None))), \
+         patch.object(sender, "_write_log",
+                      new=AsyncMock(return_value=SeedingLog(id=1, status="success"))), \
+         patch.object(sender, "_touch_clone_last_sent",
+                      new=AsyncMock(return_value=None)), \
+         patch.object(sender, "_record_failure",
+                      new=AsyncMock(return_value=None)) as rf, \
+         patch("app.services.seeding_sender.get_client") as get_client, \
+         patch("app.services.seeding_sender.shopee_limiter") as limiter:
+        limiter.acquire = AsyncMock(return_value=None)
+        client = MagicMock()
+        client.post = AsyncMock(side_effect=fake_post)
+        get_client.return_value = client
+
+        await sender.send(
+            clone_id=7, nick_live_id=1, shopee_session_id=1,
+            content="x", template_id=None, mode="auto", log_session_id=1,
+        )
+
+    rf.assert_not_awaited()

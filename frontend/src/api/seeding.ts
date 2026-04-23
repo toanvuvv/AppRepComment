@@ -9,6 +9,10 @@ export interface SeedingClone {
   avatar: string | null;
   proxy: string | null;
   last_sent_at: string | null;
+  consecutive_failures: number;
+  last_status: "success" | "failed" | "rate_limited" | null;
+  last_error: string | null;
+  auto_disabled: boolean;
   created_at: string;
 }
 
@@ -93,6 +97,11 @@ export async function updateClone(
 
 export async function deleteClone(id: number): Promise<void> {
   await apiClient.delete(`/seeding/clones/${id}`);
+}
+
+export async function reviveClone(id: number): Promise<SeedingClone> {
+  const res = await apiClient.post(`/seeding/clones/${id}/revive`);
+  return res.data;
 }
 
 // ── Template API ──────────────────────────────────────────────────────────────

@@ -38,6 +38,14 @@ class SeedingClone(Base):
     cookies: Mapped[str] = mapped_column(EncryptedString, nullable=False)
     proxy: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0,
+    )
+    last_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    auto_disabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False,
     )

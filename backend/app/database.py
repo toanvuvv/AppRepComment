@@ -193,3 +193,6 @@ def init_db():
 
     m008 = importlib.import_module("migrations.008_fix_app_settings_unique")
     m008.migrate()
+
+    m009 = importlib.import_module("migrations.009_seeding_clone_health")
+    m009.migrate()

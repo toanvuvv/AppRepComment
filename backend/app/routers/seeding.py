@@ -140,6 +140,26 @@ def update_clone(
     return row
 
 
+@router.post("/clones/{clone_id}/revive", response_model=SeedingCloneResponse)
+def revive_clone(
+    clone_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SeedingClone:
+    row = _owned_clone(db, clone_id, current_user.id)
+    row.consecutive_failures = 0
+    row.last_status = None
+    row.last_error = None
+    row.auto_disabled = False
+    db.commit()
+    db.refresh(row)
+    logger.info(
+        "seeding clone revived id=%s name=%s by user=%s",
+        clone_id, row.name, current_user.id,
+    )
+    return row
+
+
 @router.delete("/clones/{clone_id}", status_code=204)
 def delete_clone(
     clone_id: int,

@@ -50,6 +50,10 @@ class SeedingCloneResponse(BaseModel):
     avatar: str | None
     proxy: str | None
     last_sent_at: datetime | None
+    consecutive_failures: int = 0
+    last_status: str | None = None
+    last_error: str | None = None
+    auto_disabled: bool = False
     created_at: datetime
     model_config = {"from_attributes": True}
 

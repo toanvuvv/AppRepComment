@@ -4,6 +4,7 @@ import {
   createClone,
   updateClone,
   deleteClone,
+  reviveClone,
   type SeedingClone,
   type CreateClonePayload,
   type UpdateClonePatch,
@@ -17,6 +18,7 @@ export interface UseSeedingClonesResult {
   create: (payload: CreateClonePayload) => Promise<void>;
   update: (id: number, patch: UpdateClonePatch) => Promise<void>;
   remove: (id: number) => Promise<void>;
+  revive: (id: number) => Promise<void>;
 }
 
 export function useSeedingClones(): UseSeedingClonesResult {
@@ -58,5 +60,10 @@ export function useSeedingClones(): UseSeedingClonesResult {
     await refresh();
   };
 
-  return { clones, loading, error, refresh, create, update, remove };
+  const revive = async (id: number): Promise<void> => {
+    await reviveClone(id);
+    await refresh();
+  };
+
+  return { clones, loading, error, refresh, create, update, remove, revive };
 }

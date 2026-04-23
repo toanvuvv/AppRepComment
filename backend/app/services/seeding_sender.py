@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 _SHOPEE_HOST = "live.shopee.vn"
 CLONE_FLOOR_SEC = 10
+# Auto-disable a clone after this many consecutive failed sends (auto mode).
+AUTO_DISABLE_THRESHOLD = 5
 
 _HOST_HEADERS: dict[str, str] = {
     "accept": "application/json, text/plain, */*",
@@ -63,10 +65,16 @@ class SeedingSender:
         if clone is None:
             raise ValueError(f"clone {clone_id} not found")
 
+        clone_name = getattr(clone, "name", f"clone#{clone_id}")
+
         retry_after = self._floor_remaining_sec(clone.last_sent_at)
         if retry_after > 0:
             if mode == "manual":
                 raise CloneRateLimitedError(retry_after)
+            logger.info(
+                "seeding rate_limited clone_id=%s name=%s retry_after=%ss",
+                clone_id, clone_name, retry_after,
+            )
             return await self._write_log(
                 log_session_id=log_session_id, clone_id=clone_id,
                 template_id=template_id, content=content,
@@ -79,6 +87,11 @@ class SeedingSender:
         except HostConfigMissingError:
             if mode == "manual":
                 raise
+            logger.warning(
+                "seeding failed clone_id=%s name=%s error=host_config_missing",
+                clone_id, clone_name,
+            )
+            await self._record_failure(clone_id, "host_config_missing")
             return await self._write_log(
                 log_session_id=log_session_id, clone_id=clone_id,
                 template_id=template_id, content=content,
@@ -93,24 +106,35 @@ class SeedingSender:
 
         if status == 200 and err is None:
             await self._touch_clone_last_sent(clone_id)
+            logger.info(
+                "seeding success clone_id=%s name=%s mode=%s",
+                clone_id, clone_name, mode,
+            )
             return await self._write_log(
                 log_session_id=log_session_id, clone_id=clone_id,
                 template_id=template_id, content=content,
                 status="success", error=None,
             )
 
+        error_msg = err or f"http_{status}"
+        logger.warning(
+            "seeding failed clone_id=%s name=%s mode=%s status=%s error=%s",
+            clone_id, clone_name, mode, status, error_msg,
+        )
+        await self._record_failure(clone_id, error_msg)
+
         if mode == "manual":
             await self._write_log(
                 log_session_id=log_session_id, clone_id=clone_id,
                 template_id=template_id, content=content,
-                status="failed", error=err or f"http_{status}",
+                status="failed", error=error_msg,
             )
-            raise RuntimeError(err or f"http_{status}")
+            raise RuntimeError(error_msg)
 
         return await self._write_log(
             log_session_id=log_session_id, clone_id=clone_id,
             template_id=template_id, content=content,
-            status="failed", error=err or f"http_{status}",
+            status="failed", error=error_msg,
         )
 
     def _floor_remaining_sec(self, last_sent_at: datetime | None) -> int:
@@ -132,6 +156,9 @@ class SeedingSender:
 
     async def _touch_clone_last_sent(self, clone_id: int) -> None:
         await asyncio.to_thread(self._touch_clone_last_sent_sync, clone_id)
+
+    async def _record_failure(self, clone_id: int, error: str) -> None:
+        await asyncio.to_thread(self._record_failure_sync, clone_id, error)
 
     async def _write_log(
         self, *, log_session_id: int, clone_id: int, template_id: int | None,
@@ -179,7 +206,30 @@ class SeedingSender:
             ).first()
             if row is not None:
                 row.last_sent_at = datetime.now(timezone.utc)
+                row.consecutive_failures = 0
+                row.last_status = "success"
+                row.last_error = None
                 db.commit()
+
+    def _record_failure_sync(self, clone_id: int, error: str) -> None:
+        with SessionLocal() as db:
+            row = db.query(SeedingClone).filter(
+                SeedingClone.id == clone_id
+            ).first()
+            if row is None:
+                return
+            row.consecutive_failures = (row.consecutive_failures or 0) + 1
+            row.last_status = "failed"
+            row.last_error = error
+            if row.consecutive_failures >= AUTO_DISABLE_THRESHOLD:
+                if not row.auto_disabled:
+                    logger.warning(
+                        "seeding auto-disabled clone_id=%s name=%s after "
+                        "%s consecutive failures (last_error=%s)",
+                        clone_id, row.name, row.consecutive_failures, error,
+                    )
+                row.auto_disabled = True
+            db.commit()
 
     def _write_log_sync(
         self, *, log_session_id: int, clone_id: int, template_id: int | None,
