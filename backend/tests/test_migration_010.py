@@ -24,7 +24,7 @@ def fresh_db(tmp_path, monkeypatch):
 
     # Purge any cached migration 010 module so it re-imports with new engine.
     for key in list(sys.modules):
-        if "010" in key:
+        if "010_system_keys_and_ai_mode" in key:
             del sys.modules[key]
 
     test_engine = create_engine(db_url, connect_args={"check_same_thread": False})
@@ -126,3 +126,8 @@ def test_migration_010_is_idempotent(fresh_db):
 
     cols = _columns(fresh_db, "users")
     assert "ai_key_mode" in cols
+
+    # The second run must be a no-op: exactly the one per-user openai key
+    # (user_id=1, key='openai_api_key', value='sk-keep') should remain.
+    remaining = _rows(fresh_db, "SELECT COUNT(*) FROM app_settings")
+    assert remaining == [(1,)]

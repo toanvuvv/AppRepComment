@@ -16,7 +16,7 @@ from app.database import engine
 logger = logging.getLogger(__name__)
 
 
-def _column_exists(cursor: sqlite3.Cursor, table: str, column: str) -> bool:
+def _col_exists(cursor: sqlite3.Cursor, table: str, column: str) -> bool:
     cursor.execute(f"PRAGMA table_info({table})")
     return any(row[1] == column for row in cursor.fetchall())
 
@@ -25,29 +25,34 @@ def migrate() -> None:
     raw = engine.raw_connection()
     try:
         cur = raw.cursor()
+        cur.execute("BEGIN")
+        try:
+            if not _col_exists(cur, "users", "ai_key_mode"):
+                cur.execute(
+                    "ALTER TABLE users ADD COLUMN ai_key_mode "
+                    "VARCHAR(10) NOT NULL DEFAULT 'system'"
+                )
+                logger.info("Migration 010: added users.ai_key_mode")
+            else:
+                logger.info("Migration 010: users.ai_key_mode already present — skip ALTER")
 
-        if not _column_exists(cur, "users", "ai_key_mode"):
+            cur.execute("DELETE FROM app_settings WHERE key = 'relive_api_key'")
+            deleted_relive = cur.rowcount
             cur.execute(
-                "ALTER TABLE users ADD COLUMN ai_key_mode "
-                "VARCHAR(10) NOT NULL DEFAULT 'system'"
+                "DELETE FROM app_settings "
+                "WHERE user_id IS NULL AND key IN ('openai_api_key','openai_model')"
             )
-            logger.info("Migration 010: added users.ai_key_mode")
-        else:
-            logger.info("Migration 010: users.ai_key_mode already present — skip ALTER")
+            deleted_legacy = cur.rowcount
 
-        cur.execute("DELETE FROM app_settings WHERE key = 'relive_api_key'")
-        deleted_relive = cur.rowcount
-        cur.execute(
-            "DELETE FROM app_settings "
-            "WHERE user_id IS NULL AND key IN ('openai_api_key','openai_model')"
-        )
-        deleted_legacy = cur.rowcount
-
-        raw.commit()
-        logger.info(
-            "Migration 010: removed %d relive rows, %d legacy NULL-scoped openai rows",
-            deleted_relive,
-            deleted_legacy,
-        )
+            raw.commit()
+            logger.info(
+                "Migration 010: removed %d relive rows, %d legacy NULL-scoped openai rows",
+                deleted_relive,
+                deleted_legacy,
+            )
+        except Exception:
+            raw.rollback()
+            logger.exception("Migration 010 rolled back")
+            raise
     finally:
         raw.close()
