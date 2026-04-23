@@ -14,6 +14,8 @@ class OpenAIConfigUpdate(BaseModel):
 class OpenAIConfigResponse(BaseModel):
     api_key_set: bool
     model: str | None
+    ai_key_mode: Literal["own", "system"]
+    is_managed_by_admin: bool
 
 
 class SystemPromptUpdate(BaseModel):

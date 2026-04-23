@@ -53,7 +53,11 @@ def get_openai_config(
 ) -> OpenAIConfigResponse:
     svc = SettingsService(db, user_id=current_user.id)
     config = svc.get_openai_config()
-    return OpenAIConfigResponse(**config)
+    return OpenAIConfigResponse(
+        **config,
+        ai_key_mode=current_user.ai_key_mode,
+        is_managed_by_admin=current_user.ai_key_mode == "system",
+    )
 
 
 @router.put("/openai")
