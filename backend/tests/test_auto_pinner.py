@@ -205,13 +205,20 @@ async def test_loop_swallows_relive_error(pinner, monkeypatch):
 
 
 def test_load_api_key_reads_system_scope(monkeypatch):
+    import importlib
+    import sys
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+
+    # Reload app.database first so Base has fresh metadata, then reload
+    # all model modules so their mappers re-register against the new Base.
+    import app.database as _db_mod
+    importlib.reload(_db_mod)
+    for mod_name in ["app.models.user", "app.models.nick_live", "app.models.settings"]:
+        if mod_name in sys.modules:
+            importlib.reload(sys.modules[mod_name])
+
     from app.database import Base
-    # Import all models so FK references resolve before create_all
-    import app.models.user  # noqa: F401
-    import app.models.nick_live  # noqa: F401
-    import app.models.settings  # noqa: F401
     from app.services.settings_service import SettingsService
 
     mem_engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
