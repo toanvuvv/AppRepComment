@@ -154,3 +154,31 @@ def test_admin_list_users_includes_openai_own_key_set(client, seed_user_and_admi
     rows = {row["username"]: row for row in r.json()}
     assert rows["u1"]["openai_own_key_set"] is True
     assert rows["admin1"]["openai_own_key_set"] is False
+
+
+def test_user_relive_routes_are_gone(client, seed_user_and_admin):
+    token = _login(client, "usr1", "password1")
+    r = client.get("/api/settings/relive-api-key", headers=_auth(token))
+    assert r.status_code == 404
+    r = client.put(
+        "/api/settings/relive-api-key", json={"api_key": "x"}, headers=_auth(token),
+    )
+    assert r.status_code == 404
+
+
+def test_user_in_system_mode_cannot_put_own_openai(client, seed_user_and_admin):
+    admin = _login(client, "admin1", "password1")
+    r = client.get("/api/admin/users", headers=_auth(admin))
+    usr1 = next(u for u in r.json() if u["username"] == "usr1")
+    client.patch(
+        f"/api/admin/users/{usr1['id']}", json={"ai_key_mode": "system"},
+        headers=_auth(admin),
+    )
+
+    token = _login(client, "usr1", "password1")
+    r = client.put(
+        "/api/settings/openai",
+        json={"api_key": "sk", "model": "gpt-4o"},
+        headers=_auth(token),
+    )
+    assert r.status_code == 403

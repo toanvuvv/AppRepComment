@@ -66,6 +66,11 @@ def update_openai_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
+    if current_user.ai_key_mode == "system":
+        raise HTTPException(
+            status_code=403,
+            detail="Tài khoản đang dùng system key; không thể tự cấu hình",
+        )
     svc = SettingsService(db, user_id=current_user.id)
     svc.set_setting("openai_api_key", payload.api_key)
     svc.set_setting("openai_model", payload.model)
@@ -258,26 +263,3 @@ def update_banned_words(
     return {"status": "saved"}
 
 
-# --- Relive API key ---
-
-
-@router.get("/relive-api-key")
-def get_relive_key(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    svc = SettingsService(db, user_id=current_user.id)
-    key = svc.get_setting("relive_api_key")
-    # Never return the key value in plaintext; only signal whether it is set.
-    return {"api_key_set": bool(key)}
-
-
-@router.put("/relive-api-key")
-def update_relive_key(
-    payload: dict,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    svc = SettingsService(db, user_id=current_user.id)
-    svc.set_setting("relive_api_key", payload.get("api_key", ""))
-    return {"status": "saved"}
