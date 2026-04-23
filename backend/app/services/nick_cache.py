@@ -160,6 +160,14 @@ class NickRuntimeCache:
             svc = SettingsService(db, user_id=user_id)
             row = svc.get_or_create_nick_settings(nick_live_id)
 
+            from app.models.user import User as _User
+            user_row = (
+                db.query(_User).filter(_User.id == user_id).first()
+                if user_id is not None else None
+            )
+            ai_key_mode = user_row.ai_key_mode if user_row else "own"
+            resolved_key, resolved_model = svc.resolve_openai_config(ai_key_mode)
+
             host_config_dict: dict | None = None
             if row.host_config:
                 try:
@@ -183,8 +191,8 @@ class NickRuntimeCache:
                 auto_post_to_moderator=bool(getattr(row, "auto_post_to_moderator", False)),
                 host_config=host_config_dict,
                 moderator_config=moderator_config_dict,
-                openai_api_key=svc.get_openai_api_key(),
-                openai_model=svc.get_setting("openai_model"),
+                openai_api_key=resolved_key,
+                openai_model=resolved_model,
                 system_prompt=svc.get_system_prompt() or "",
                 knowledge_model=svc.get_knowledge_model(),
                 knowledge_system_prompt=svc.get_knowledge_system_prompt() or "",

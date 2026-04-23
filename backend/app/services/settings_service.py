@@ -311,8 +311,17 @@ class SettingsService:
                 if n == 0:
                     raise ValueError("Cần tạo template reply trước khi bật chế độ Template")
             elif reply_mode == "ai":
-                if not self.get_openai_api_key():
-                    raise ValueError("Cần cấu hình OpenAI API key trước")
+                from app.models.user import User as _User
+                user_row = (
+                    self._db.query(_User).filter(_User.id == self._user_id).first()
+                    if self._user_id is not None else None
+                )
+                mode = (user_row.ai_key_mode if user_row else "own")
+                api_key, _model = self.resolve_openai_config(mode)
+                if not api_key:
+                    if mode == "system":
+                        raise ValueError("Admin chưa cấu hình System OpenAI key")
+                    raise ValueError("Cần cấu hình OpenAI API key (chế độ own)")
             row.reply_mode = reply_mode
 
         # --- Validate channel toggles (only when turning ON) ---

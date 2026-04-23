@@ -185,10 +185,12 @@ async def test_ai(
 ) -> dict:
     """Test OpenAI connection with current config."""
     svc = SettingsService(db, user_id=current_user.id)
-    api_key = svc.get_openai_api_key()
+    api_key, model = svc.resolve_openai_config(current_user.ai_key_mode)
     if not api_key:
+        if current_user.ai_key_mode == "system":
+            raise HTTPException(status_code=400, detail="Admin chưa cấu hình System OpenAI key")
         raise HTTPException(status_code=400, detail="OpenAI API Key chưa được cấu hình")
-    model = svc.get_setting("openai_model") or "gpt-4o"
+    model = model or "gpt-4o"
     system_prompt = svc.get_system_prompt() or "Bạn là nhân viên CSKH."
     reply = await generate_reply(
         api_key=api_key,
