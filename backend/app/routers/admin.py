@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_admin
 from app.models.nick_live import NickLive
+from app.models.settings import AppSetting
 from app.models.user import User
 from app.schemas.settings import (
     SystemKeysResponse,
@@ -13,6 +14,7 @@ from app.schemas.settings import (
 )
 from app.schemas.user import UserCreate, UserOut, UserUpdate
 from app.services.auth import hash_password
+from app.services.nick_cache import nick_cache
 from app.services.settings_service import SettingsService
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -20,6 +22,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 class _UserWithCount(UserOut):
     nick_count: int
+    openai_own_key_set: bool
 
 
 @router.get("/users", response_model=list[_UserWithCount])
@@ -33,8 +36,20 @@ def list_users(
         .group_by(User.id)
         .all()
     )
+    own_key_user_ids = {
+        uid for (uid,) in db.query(AppSetting.user_id).filter(
+            AppSetting.key == "openai_api_key",
+            AppSetting.user_id.isnot(None),
+            AppSetting.value.isnot(None),
+            AppSetting.value != "",
+        ).all()
+    }
     return [
-        _UserWithCount(**UserOut.model_validate(u).model_dump(), nick_count=int(c))
+        _UserWithCount(
+            **UserOut.model_validate(u).model_dump(),
+            nick_count=int(c),
+            openai_own_key_set=u.id in own_key_user_ids,
+        )
         for u, c in rows
     ]
 
@@ -53,6 +68,7 @@ def create_user(
         role="user",
         max_nicks=body.max_nicks,
         is_locked=False,
+        ai_key_mode=body.ai_key_mode,
     )
     db.add(u)
     db.commit()
@@ -83,6 +99,14 @@ def update_user(
     if body.new_password is not None:
         u.password_hash = hash_password(body.new_password)
         changed = True
+    if body.ai_key_mode is not None and body.ai_key_mode != u.ai_key_mode:
+        u.ai_key_mode = body.ai_key_mode
+        changed = True
+        from app.models.nick_live import NickLive as _NL
+        nick_ids = [nid for (nid,) in db.query(_NL.id)
+                    .filter(_NL.user_id == u.id).all()]
+        for nid in nick_ids:
+            nick_cache.invalidate_settings(nid)
     if not changed:
         raise HTTPException(status_code=400, detail="No fields to update")
     db.commit()

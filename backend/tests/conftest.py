@@ -51,7 +51,7 @@ def _reset_login_attempts():
     yield
 
 
-_SEED_USERNAMES = ["usr1", "admin1"]
+_SEED_USERNAMES = ["usr1", "u1", "usr2", "usr3", "admin1"]
 _SYSTEM_KEY_NAMES = ["relive_api_key", "system_openai_api_key", "system_openai_model"]
 
 
@@ -78,6 +78,12 @@ def seed_user_and_admin():
         db.query(User).filter(User.username.in_(_SEED_USERNAMES)).delete()
         db.add(User(
             username="usr1",
+            password_hash=hash_password("password1"),
+            role="user",
+            ai_key_mode="own",
+        ))
+        db.add(User(
+            username="u1",
             password_hash=hash_password("password1"),
             role="user",
             ai_key_mode="own",
