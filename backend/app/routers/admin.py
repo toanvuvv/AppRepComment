@@ -6,8 +6,14 @@ from app.database import get_db
 from app.dependencies import require_admin
 from app.models.nick_live import NickLive
 from app.models.user import User
+from app.schemas.settings import (
+    SystemKeysResponse,
+    SystemOpenAIUpdate,
+    SystemReliveUpdate,
+)
 from app.schemas.user import UserCreate, UserOut, UserUpdate
 from app.services.auth import hash_password
+from app.services.settings_service import SettingsService
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -131,3 +137,45 @@ def delete_user(
     db.delete(u)
     db.commit()
     return Response(status_code=204)
+
+
+def _invalidate_all_nick_settings() -> None:
+    from app.services.nick_cache import nick_cache
+    nick_cache._settings.clear()
+
+
+@router.get("/system-keys", response_model=SystemKeysResponse)
+def get_system_keys(
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> SystemKeysResponse:
+    svc = SettingsService(db)
+    return SystemKeysResponse(
+        relive_api_key_set=bool(svc.get_system_relive_api_key()),
+        openai_api_key_set=bool(svc.get_system_openai_api_key()),
+        openai_model=svc.get_system_openai_model(),
+    )
+
+
+@router.put("/system-keys/relive")
+def put_system_relive(
+    body: SystemReliveUpdate,
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    SettingsService(db).set_system_relive_api_key(body.api_key)
+    _invalidate_all_nick_settings()
+    return {"status": "saved"}
+
+
+@router.put("/system-keys/openai")
+def put_system_openai(
+    body: SystemOpenAIUpdate,
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    svc = SettingsService(db)
+    svc.set_system_openai_api_key(body.api_key)
+    svc.set_system_openai_model(body.model)
+    _invalidate_all_nick_settings()
+    return {"status": "saved"}
