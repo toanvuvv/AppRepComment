@@ -87,3 +87,38 @@ def test_nick_live_settings_update(db):
     updated = svc.update_nick_settings(nick_live_id=1, reply_mode="ai")
     assert updated.reply_mode == "ai"
     assert updated.auto_post_enabled is False  # unchanged
+
+
+def test_resolve_openai_config_system_reads_system_rows(db):
+    from app.services.settings_service import SettingsService
+    SettingsService(db).set_system_openai_api_key("sys-key")
+    SettingsService(db).set_system_openai_model("gpt-4o")
+    SettingsService(db, user_id=1).set_setting("openai_api_key", "own-key")
+    SettingsService(db, user_id=1).set_setting("openai_model", "gpt-own")
+    api_key, model = SettingsService(db, user_id=1).resolve_openai_config("system")
+    assert api_key == "sys-key"
+    assert model == "gpt-4o"
+
+
+def test_resolve_openai_config_own_reads_per_user_and_does_not_fallback(db):
+    from app.services.settings_service import SettingsService
+    SettingsService(db).set_system_openai_api_key("sys-key")
+    SettingsService(db).set_system_openai_model("gpt-sys")
+    svc1 = SettingsService(db, user_id=1)
+    assert svc1.resolve_openai_config("own") == (None, None)
+    svc1.set_setting("openai_api_key", "own-1")
+    svc1.set_setting("openai_model", "gpt-1")
+    assert svc1.resolve_openai_config("own") == ("own-1", "gpt-1")
+
+
+def test_get_system_relive_api_key_is_scope_free(db):
+    from app.services.settings_service import SettingsService
+    SettingsService(db).set_setting("relive_api_key", "sys-relive")
+    assert SettingsService(db, user_id=99).get_system_relive_api_key() == "sys-relive"
+
+
+def test_resolve_openai_config_rejects_unknown_mode(db):
+    import pytest
+    from app.services.settings_service import SettingsService
+    with pytest.raises(ValueError):
+        SettingsService(db, user_id=1).resolve_openai_config("bogus")
