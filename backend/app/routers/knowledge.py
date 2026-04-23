@@ -68,7 +68,7 @@ async def parse_products_from_relive(
     nick = _require_nick_ownership(nick_live_id, current_user, db)
 
     svc = SettingsService(db, user_id=current_user.id)
-    api_key = svc.get_setting("relive_api_key")
+    api_key = svc.get_system_relive_api_key()
     if not api_key:
         raise HTTPException(status_code=400, detail="Relive API key not configured")
 

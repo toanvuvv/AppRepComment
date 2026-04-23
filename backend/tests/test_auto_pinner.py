@@ -202,3 +202,30 @@ async def test_loop_swallows_relive_error(pinner, monkeypatch):
             await task
         except asyncio.CancelledError:
             pass
+
+
+def test_load_api_key_reads_system_scope(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.database import Base
+    # Import all models so FK references resolve before create_all
+    import app.models.user  # noqa: F401
+    import app.models.nick_live  # noqa: F401
+    import app.models.settings  # noqa: F401
+    from app.services.settings_service import SettingsService
+
+    mem_engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(mem_engine)
+    MemSession = sessionmaker(bind=mem_engine, autocommit=False, autoflush=False)
+
+    with MemSession() as db:
+        # A rogue per-user row that must be ignored.
+        SettingsService(db, user_id=42).set_setting("relive_api_key", "per-user-stale")
+        SettingsService(db).set_system_relive_api_key("system-live")
+
+    # Patch SessionLocal inside auto_pinner to use the in-memory session
+    import app.services.auto_pinner as _ap_mod
+    monkeypatch.setattr(_ap_mod, "SessionLocal", MemSession)
+
+    pinner = AutoPinner()
+    assert pinner._load_api_key(42) == "system-live"
