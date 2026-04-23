@@ -73,7 +73,12 @@ logs/
 *.sqlite
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 backend/database.db
+backend/database.db-shm
+backend/database.db-wal
+backend/database.db.bak-*
 .gitnexus
 docker-compose.override.yml
 # Git worktrees
