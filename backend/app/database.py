@@ -174,3 +174,6 @@ def init_db():
 
     m005 = importlib.import_module("migrations.005_seeding")
     m005.migrate()
+
+    m006 = importlib.import_module("migrations.006_drop_legacy_reply_columns")
+    m006.migrate()
