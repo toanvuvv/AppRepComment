@@ -190,3 +190,6 @@ def init_db():
 
     m007 = importlib.import_module("migrations.007_add_missing_fks")
     m007.migrate()
+
+    m008 = importlib.import_module("migrations.008_fix_app_settings_unique")
+    m008.migrate()
