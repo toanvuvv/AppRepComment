@@ -3,9 +3,13 @@ import apiClient from "./client";
 
 export type ReplyMode = "none" | "knowledge" | "ai" | "template";
 
+export type AiKeyMode = "own" | "system";
+
 export interface OpenAIConfig {
   api_key_set: boolean;
   model: string | null;
+  ai_key_mode: AiKeyMode;
+  is_managed_by_admin: boolean;
 }
 
 export interface SystemPrompt {
@@ -112,17 +116,6 @@ export async function updateAutoPostTemplate(
 
 export async function deleteAutoPostTemplate(id: number): Promise<void> {
   await apiClient.delete(`/settings/auto-post-templates/${id}`);
-}
-
-// --- Relive API key ---
-
-export async function getReliveApiKey(): Promise<{ api_key_set: boolean }> {
-  const res = await apiClient.get("/settings/relive-api-key");
-  return res.data;
-}
-
-export async function updateReliveApiKey(api_key: string): Promise<void> {
-  await apiClient.put("/settings/relive-api-key", { api_key });
 }
 
 // --- Test AI ---
