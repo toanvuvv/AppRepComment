@@ -101,11 +101,14 @@ class SettingsService:
     def update_auto_post_template(
         self,
         template_id: int,
+        nick_live_id: int | None = None,
         content: str | None = None,
         min_interval: int | None = None,
         max_interval: int | None = None,
     ) -> AutoPostTemplate | None:
         q = self._db.query(AutoPostTemplate).filter(AutoPostTemplate.id == template_id)
+        if nick_live_id is not None:
+            q = q.filter(AutoPostTemplate.nick_live_id == nick_live_id)
         if self._user_id is not None:
             q = q.filter(AutoPostTemplate.user_id == self._user_id)
         tmpl = q.first()

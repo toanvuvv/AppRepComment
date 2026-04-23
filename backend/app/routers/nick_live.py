@@ -657,16 +657,6 @@ async def host_post(
 # --- Per-nick auto-post template CRUD ---
 
 
-def _require_nick_ownership(nick_live_id: int, current_user: User, db: Session) -> NickLive:
-    """Return the nick if owned by current_user, else raise 404."""
-    nick = db.query(NickLive).filter(
-        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
-    ).first()
-    if not nick:
-        raise HTTPException(status_code=404, detail="Nick not found")
-    return nick
-
-
 @router.get(
     "/{nick_live_id}/auto-post-templates",
     response_model=list[AutoPostTemplateResponse],
@@ -676,7 +666,7 @@ def list_nick_auto_post_templates(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_nick_ownership(nick_live_id, current_user, db)
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     svc = SettingsService(db, user_id=current_user.id)
     return svc.get_auto_post_templates_for_nick(nick_live_id)
 
@@ -691,7 +681,7 @@ def create_nick_auto_post_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_nick_ownership(nick_live_id, current_user, db)
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     svc = SettingsService(db, user_id=current_user.id)
     return svc.create_auto_post_template_for_nick(
         nick_live_id,
@@ -712,10 +702,11 @@ def update_nick_auto_post_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_nick_ownership(nick_live_id, current_user, db)
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     svc = SettingsService(db, user_id=current_user.id)
     result = svc.update_auto_post_template(
         template_id,
+        nick_live_id=nick_live_id,
         content=payload.content,
         min_interval=payload.min_interval_seconds,
         max_interval=payload.max_interval_seconds,
@@ -732,7 +723,7 @@ def delete_nick_auto_post_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_nick_ownership(nick_live_id, current_user, db)
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     svc = SettingsService(db, user_id=current_user.id)
     if not svc.delete_auto_post_template_for_nick(nick_live_id, template_id):
         raise HTTPException(status_code=404, detail="Template not found")
@@ -751,7 +742,7 @@ def list_nick_reply_templates(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_nick_ownership(nick_live_id, current_user, db)
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     svc = SettingsService(db, user_id=current_user.id)
     return svc.get_reply_templates_for_nick(nick_live_id)
 
@@ -766,7 +757,7 @@ def create_nick_reply_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_nick_ownership(nick_live_id, current_user, db)
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     svc = SettingsService(db, user_id=current_user.id)
     return svc.create_reply_template_for_nick(nick_live_id, payload.content)
 
@@ -778,7 +769,7 @@ def delete_nick_reply_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_nick_ownership(nick_live_id, current_user, db)
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
     svc = SettingsService(db, user_id=current_user.id)
     if not svc.delete_reply_template_for_nick(nick_live_id, template_id):
         raise HTTPException(status_code=404, detail="Template not found")

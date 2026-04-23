@@ -23,11 +23,13 @@ def _write_batch_sync(entries: list[dict]) -> None:
     Imported lazily: ``ReplyLog`` and ``SessionLocal`` may not exist at
     module-load time while Agent 1 is creating the model in parallel.
     """
+    from sqlalchemy import insert
+
     from app.database import SessionLocal  # type: ignore[import-not-found]
     from app.models.reply_log import ReplyLog  # type: ignore[import-not-found]
 
     with SessionLocal() as db:
-        db.bulk_insert_mappings(ReplyLog, entries)
+        db.execute(insert(ReplyLog), entries)
         db.commit()
 
 

@@ -29,7 +29,12 @@ class ReplyTemplate(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    nick_live_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    nick_live_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("nick_lives.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )
@@ -43,7 +48,12 @@ class AutoPostTemplate(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    nick_live_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    nick_live_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("nick_lives.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )
@@ -58,7 +68,12 @@ class NickLiveSetting(Base):
     __tablename__ = "nick_live_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    nick_live_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+    nick_live_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("nick_lives.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
 
     # --- Reply config ---
     # reply_mode: "none" | "knowledge" | "ai" | "template"

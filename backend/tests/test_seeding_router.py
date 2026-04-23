@@ -165,22 +165,14 @@ def _make_nick_with_host_config(user_id: int) -> int:
         db.add(nick)
         db.commit()
         db.refresh(nick)
-        # NickLiveSetting ORM model is out of sync with the DB: extra NOT NULL
-        # columns (ai_reply_enabled, auto_reply_enabled, auto_post_enabled, …)
-        # live in the DB but are absent from the mapped class. Use raw INSERT
-        # so we can supply defaults for every NOT NULL column at once.
-        db.execute(
-            text(
-                "INSERT INTO nick_live_settings "
-                "(nick_live_id, host_config, "
-                " ai_reply_enabled, auto_reply_enabled, auto_post_enabled, "
-                " reply_to_host, reply_to_moderator, "
-                " auto_post_to_host, auto_post_to_moderator, "
-                " auto_pin_enabled) "
-                "VALUES (:nid, :hc, 0, 0, 0, 0, 0, 0, 0, 0)"
-            ),
-            {"nid": nick.id, "hc": '{"uuid":"U","usersig":"S"}'},
+        # Legacy NOT NULL columns (ai_reply_enabled, auto_reply_enabled) were
+        # dropped in migration 006. The ORM model now matches the live schema,
+        # so a plain ORM insert works.
+        settings = NickLiveSetting(
+            nick_live_id=nick.id,
+            host_config='{"uuid":"U","usersig":"S"}',
         )
+        db.add(settings)
         db.commit()
         return nick.id
 

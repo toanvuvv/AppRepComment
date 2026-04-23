@@ -1,7 +1,10 @@
+import logging
 import os
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+logger = logging.getLogger(__name__)
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./database.db")
 
@@ -35,6 +38,9 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -106,8 +112,10 @@ def _migrate_add_columns() -> None:
             try:
                 cursor.execute(sql)
                 conn.commit()
-            except sqlite3.OperationalError:
-                pass
+            except sqlite3.OperationalError as exc:
+                logger.warning(
+                    "Schema migration failed for %s.%s: %s", table, column, exc
+                )
 
     # --- Data migration: map old *_enabled columns to new schema ---
     # Old columns may or may not exist; check each before running UPDATE.
@@ -149,8 +157,10 @@ def _migrate_add_columns() -> None:
         try:
             cursor.execute(update_sql)
             conn.commit()
-        except sqlite3.OperationalError:
-            pass
+        except sqlite3.OperationalError as exc:
+            logger.warning(
+                "Data migration probe=%s failed: %s", probe_column, exc
+            )
 
     conn.close()
 
@@ -177,3 +187,6 @@ def init_db():
 
     m006 = importlib.import_module("migrations.006_drop_legacy_reply_columns")
     m006.migrate()
+
+    m007 = importlib.import_module("migrations.007_add_missing_fks")
+    m007.migrate()

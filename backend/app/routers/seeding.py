@@ -253,8 +253,12 @@ def _find_or_create_manual_session(
         .order_by(SeedingLogSession.started_at.desc())
         .first()
     )
-    if row is not None and row.started_at.date() == today_utc:
-        return row
+    if row is not None:
+        started = row.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        if started.date() == today_utc:
+            return row
     row = SeedingLogSession(
         user_id=user_id,
         nick_live_id=nick_live_id,
