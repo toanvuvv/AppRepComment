@@ -49,3 +49,54 @@ def _reset_login_attempts():
     except Exception:
         pass
     yield
+
+
+_SEED_USERNAMES = ["usr1", "u1", "usr2", "usr3", "admin1"]
+_SYSTEM_KEY_NAMES = ["relive_api_key", "system_openai_api_key", "system_openai_model"]
+
+
+def _clear_system_keys(db) -> None:
+    """Delete all NULL-scoped app_settings rows used as system keys."""
+    from app.models.settings import AppSetting
+    (
+        db.query(AppSetting)
+        .filter(AppSetting.user_id.is_(None), AppSetting.key.in_(_SYSTEM_KEY_NAMES))
+        .delete(synchronize_session=False)
+    )
+
+
+@pytest.fixture
+def seed_user_and_admin():
+    """Create a regular user and an admin user for system-keys tests, clean up after."""
+    from app.database import Base, SessionLocal, engine
+    from app.models.user import User
+    from app.services.auth import hash_password
+
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        _clear_system_keys(db)
+        db.query(User).filter(User.username.in_(_SEED_USERNAMES)).delete()
+        db.add(User(
+            username="usr1",
+            password_hash=hash_password("password1"),
+            role="user",
+            ai_key_mode="own",
+        ))
+        db.add(User(
+            username="u1",
+            password_hash=hash_password("password1"),
+            role="user",
+            ai_key_mode="own",
+        ))
+        db.add(User(
+            username="admin1",
+            password_hash=hash_password("password1"),
+            role="admin",
+            ai_key_mode="own",
+        ))
+        db.commit()
+    yield
+    with SessionLocal() as db:
+        _clear_system_keys(db)
+        db.query(User).filter(User.username.in_(_SEED_USERNAMES)).delete()
+        db.commit()

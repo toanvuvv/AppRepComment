@@ -45,10 +45,10 @@ class AutoPinner:
             return row, nick.user_id
 
     def _load_api_key(self, user_id: int) -> str | None:
+        """Relive key is system-scoped; user_id kept in signature for compatibility."""
         from app.services.settings_service import SettingsService
         with SessionLocal() as db:
-            svc = SettingsService(db, user_id=user_id)
-            return svc.get_setting("relive_api_key")
+            return SettingsService(db).get_system_relive_api_key()
 
     def _count_in_stock(self, nick_live_id: int) -> int:
         from app.models.knowledge_product import KnowledgeProduct

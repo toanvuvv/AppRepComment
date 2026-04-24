@@ -47,6 +47,59 @@ class SettingsService:
     def get_openai_api_key(self) -> str | None:
         return self.get_setting("openai_api_key")
 
+    # --- System-scoped helpers (user_id=NULL) ---
+
+    _SYSTEM_OPENAI_KEY = "system_openai_api_key"
+    _SYSTEM_OPENAI_MODEL = "system_openai_model"
+    _RELIVE_KEY = "relive_api_key"
+
+    def _get_system_setting(self, key: str) -> str | None:
+        row = (
+            self._db.query(AppSetting)
+            .filter(AppSetting.key == key, AppSetting.user_id.is_(None))
+            .first()
+        )
+        return row.value if row else None
+
+    def _set_system_setting(self, key: str, value: str) -> None:
+        row = (
+            self._db.query(AppSetting)
+            .filter(AppSetting.key == key, AppSetting.user_id.is_(None))
+            .first()
+        )
+        if row:
+            row.value = value
+        else:
+            row = AppSetting(key=key, value=value, user_id=None)
+            self._db.add(row)
+        self._db.commit()
+
+    def get_system_openai_api_key(self) -> str | None:
+        return self._get_system_setting(self._SYSTEM_OPENAI_KEY)
+
+    def get_system_openai_model(self) -> str | None:
+        return self._get_system_setting(self._SYSTEM_OPENAI_MODEL)
+
+    def set_system_openai_api_key(self, value: str) -> None:
+        self._set_system_setting(self._SYSTEM_OPENAI_KEY, value)
+
+    def set_system_openai_model(self, value: str) -> None:
+        self._set_system_setting(self._SYSTEM_OPENAI_MODEL, value)
+
+    def get_system_relive_api_key(self) -> str | None:
+        return self._get_system_setting(self._RELIVE_KEY)
+
+    def set_system_relive_api_key(self, value: str) -> None:
+        self._set_system_setting(self._RELIVE_KEY, value)
+
+    def resolve_openai_config(self, ai_key_mode: str) -> tuple[str | None, str | None]:
+        """Return (api_key, model) per the user's ai_key_mode. No fallback."""
+        if ai_key_mode == "system":
+            return self.get_system_openai_api_key(), self.get_system_openai_model()
+        if ai_key_mode == "own":
+            return self.get_openai_api_key(), self.get_setting("openai_model")
+        raise ValueError(f"invalid ai_key_mode: {ai_key_mode!r}")
+
     def get_system_prompt(self) -> str:
         return self.get_setting("ai_system_prompt") or ""
 
@@ -258,8 +311,17 @@ class SettingsService:
                 if n == 0:
                     raise ValueError("Cần tạo template reply trước khi bật chế độ Template")
             elif reply_mode == "ai":
-                if not self.get_openai_api_key():
-                    raise ValueError("Cần cấu hình OpenAI API key trước")
+                from app.models.user import User as _User
+                user_row = (
+                    self._db.query(_User).filter(_User.id == self._user_id).first()
+                    if self._user_id is not None else None
+                )
+                mode = (user_row.ai_key_mode if user_row else "own")
+                api_key, _model = self.resolve_openai_config(mode)
+                if not api_key:
+                    if mode == "system":
+                        raise ValueError("Admin chưa cấu hình System OpenAI key")
+                    raise ValueError("Cần cấu hình OpenAI API key (chế độ own)")
             row.reply_mode = reply_mode
 
         # --- Validate channel toggles (only when turning ON) ---

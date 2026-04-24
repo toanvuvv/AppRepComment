@@ -53,7 +53,11 @@ def get_openai_config(
 ) -> OpenAIConfigResponse:
     svc = SettingsService(db, user_id=current_user.id)
     config = svc.get_openai_config()
-    return OpenAIConfigResponse(**config)
+    return OpenAIConfigResponse(
+        **config,
+        ai_key_mode=current_user.ai_key_mode,
+        is_managed_by_admin=current_user.ai_key_mode == "system",
+    )
 
 
 @router.put("/openai")
@@ -62,6 +66,11 @@ def update_openai_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
+    if current_user.ai_key_mode == "system":
+        raise HTTPException(
+            status_code=403,
+            detail="Tài khoản đang dùng system key; không thể tự cấu hình",
+        )
     svc = SettingsService(db, user_id=current_user.id)
     svc.set_setting("openai_api_key", payload.api_key)
     svc.set_setting("openai_model", payload.model)
@@ -181,10 +190,12 @@ async def test_ai(
 ) -> dict:
     """Test OpenAI connection with current config."""
     svc = SettingsService(db, user_id=current_user.id)
-    api_key = svc.get_openai_api_key()
+    api_key, model = svc.resolve_openai_config(current_user.ai_key_mode)
     if not api_key:
+        if current_user.ai_key_mode == "system":
+            raise HTTPException(status_code=400, detail="Admin chưa cấu hình System OpenAI key")
         raise HTTPException(status_code=400, detail="OpenAI API Key chưa được cấu hình")
-    model = svc.get_setting("openai_model") or "gpt-4o"
+    model = model or "gpt-4o"
     system_prompt = svc.get_system_prompt() or "Bạn là nhân viên CSKH."
     reply = await generate_reply(
         api_key=api_key,
@@ -252,26 +263,3 @@ def update_banned_words(
     return {"status": "saved"}
 
 
-# --- Relive API key ---
-
-
-@router.get("/relive-api-key")
-def get_relive_key(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    svc = SettingsService(db, user_id=current_user.id)
-    key = svc.get_setting("relive_api_key")
-    # Never return the key value in plaintext; only signal whether it is set.
-    return {"api_key_set": bool(key)}
-
-
-@router.put("/relive-api-key")
-def update_relive_key(
-    payload: dict,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    svc = SettingsService(db, user_id=current_user.id)
-    svc.set_setting("relive_api_key", payload.get("api_key", ""))
-    return {"status": "saved"}

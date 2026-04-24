@@ -196,3 +196,6 @@ def init_db():
 
     m009 = importlib.import_module("migrations.009_seeding_clone_health")
     m009.migrate()
+
+    m010 = importlib.import_module("migrations.010_system_keys_and_ai_mode")
+    m010.migrate()

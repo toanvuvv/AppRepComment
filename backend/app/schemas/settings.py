@@ -14,6 +14,8 @@ class OpenAIConfigUpdate(BaseModel):
 class OpenAIConfigResponse(BaseModel):
     api_key_set: bool
     model: str | None
+    ai_key_mode: Literal["own", "system"]
+    is_managed_by_admin: bool
 
 
 class SystemPromptUpdate(BaseModel):
@@ -148,3 +150,21 @@ class BannedWordsResponse(BaseModel):
 
 class AutoPinStartRequest(BaseModel):
     session_id: int = Field(gt=0)
+
+
+# --- System Keys (admin-only) ---
+
+
+class SystemKeysResponse(BaseModel):
+    relive_api_key_set: bool
+    openai_api_key_set: bool
+    openai_model: str | None
+
+
+class SystemReliveUpdate(BaseModel):
+    api_key: str = Field(min_length=1, max_length=500)
+
+
+class SystemOpenAIUpdate(BaseModel):
+    api_key: str = Field(min_length=1, max_length=500)
+    model: str = Field(min_length=1, max_length=100)
