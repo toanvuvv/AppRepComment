@@ -149,3 +149,13 @@ class HostPostRequest(BaseModel):
 
     content: str = Field(..., min_length=1, max_length=2000)
     session_id: int
+
+
+class BatchSessionEntry(BaseModel):
+    active_session: LiveSession | None = None
+    all_sessions: list[LiveSession] = Field(default_factory=list)
+    error: str | None = None
+
+
+class BatchSessionsResponse(BaseModel):
+    sessions: dict[str, BatchSessionEntry]

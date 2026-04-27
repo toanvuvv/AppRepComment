@@ -10,6 +10,8 @@ from app.database import get_db
 from app.models.nick_live import NickLive
 from app.schemas.nick_live import (
     AutoPostStartRequest,
+    BatchSessionEntry,
+    BatchSessionsResponse,
     HostPostRequest,
     LiveSession,
     LiveSessionsResponse,
@@ -186,6 +188,61 @@ def delete_nick_live(
     db.delete(nick)
     db.commit()
     return {"detail": "Deleted"}
+
+
+@router.get("/sessions", response_model=BatchSessionsResponse)
+async def list_sessions_batch(
+    ids: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BatchSessionsResponse:
+    """Batch-fetch sessions for multiple owned nicks. Throttles 200ms between calls."""
+    raw = [s.strip() for s in ids.split(",") if s.strip()]
+    if not raw:
+        return BatchSessionsResponse(sessions={})
+    try:
+        nick_ids = [int(s) for s in raw]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="ids must be comma-separated integers")
+
+    owned = (
+        db.query(NickLive)
+        .filter(NickLive.id.in_(nick_ids), NickLive.user_id == current_user.id)
+        .all()
+    )
+
+    result: dict[str, BatchSessionEntry] = {}
+    for idx, nick in enumerate(owned):
+        if idx > 0:
+            await asyncio.sleep(0.2)
+        try:
+            data = await get_live_sessions(nick.cookies)
+        except Exception as e:
+            result[str(nick.id)] = BatchSessionEntry(error=str(e))
+            continue
+
+        sessions_data = data.get("data", {}).get("list", [])
+        sessions: list[LiveSession] = []
+        active: LiveSession | None = None
+        for s in sessions_data:
+            session = LiveSession(
+                sessionId=s["sessionId"],
+                title=s.get("title", ""),
+                coverImage=s.get("coverImage", ""),
+                startTime=s.get("startTime", 0),
+                duration=s.get("duration", 0),
+                status=s.get("status", 0),
+                views=s.get("views", 0),
+                viewers=s.get("viewers", 0),
+                peakViewers=s.get("peakViewers", 0),
+                comments=s.get("comments", 0),
+            )
+            sessions.append(session)
+            if session.status == 1 and session.duration == 0:
+                active = session
+        result[str(nick.id)] = BatchSessionEntry(active_session=active, all_sessions=sessions)
+
+    return BatchSessionsResponse(sessions=result)
 
 
 @router.get("/{nick_live_id}/sessions", response_model=LiveSessionsResponse)
