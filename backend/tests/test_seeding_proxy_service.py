@@ -84,3 +84,58 @@ def test_format_url_no_auth():
 def test_format_url_url_encodes_password_with_special_chars():
     p = _FakeProxy("https", "h", 80, "user@x", "p@ss/word")
     assert format_url(p) == "https://user%40x:p%40ss%2Fword@h:80"
+
+
+from app.database import SessionLocal, init_db
+from app.models.seeding import SeedingProxy
+from app.models.user import User
+from app.services.seeding_proxy_service import import_bulk
+
+
+@pytest.fixture
+def db_user():
+    init_db()
+    with SessionLocal() as db:
+        db.query(SeedingProxy).delete()
+        db.query(User).filter(User.username == "proxytest").delete()
+        u = User(username="proxytest", password_hash="x", role="user")
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+        uid = u.id
+    yield uid
+    with SessionLocal() as db:
+        db.query(SeedingProxy).filter(SeedingProxy.user_id == uid).delete()
+        db.query(User).filter(User.id == uid).delete()
+        db.commit()
+
+
+def test_import_bulk_creates_rows(db_user):
+    raw = "h1.com:80:u:p\nh2.com:81:u:p\n"
+    result = import_bulk(db_user, "http", raw)
+    assert result.created == 2
+    assert result.skipped_duplicates == 0
+    assert result.errors == []
+    with SessionLocal() as db:
+        rows = db.query(SeedingProxy).filter(
+            SeedingProxy.user_id == db_user
+        ).all()
+        assert len(rows) == 2
+
+
+def test_import_bulk_dedupes_existing(db_user):
+    raw1 = "h1.com:80:u:p\n"
+    import_bulk(db_user, "http", raw1)
+    raw2 = "h1.com:80:u:p\nh3.com:82:u:p\n"
+    result = import_bulk(db_user, "http", raw2)
+    assert result.created == 1
+    assert result.skipped_duplicates == 1
+    assert result.errors == []
+
+
+def test_import_bulk_reports_parse_errors(db_user):
+    raw = "h1.com:80:u:p\nbad-line\n"
+    result = import_bulk(db_user, "http", raw)
+    assert result.created == 1
+    assert len(result.errors) == 1
+    assert result.errors[0].reason == "invalid_format"
