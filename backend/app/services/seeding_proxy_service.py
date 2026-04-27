@@ -61,3 +61,16 @@ def parse_bulk(
             username=user or None, password=pwd or None,
         ))
     return parsed, errors
+
+
+def format_url(proxy) -> str:
+    """Build the proxy URL string used by httpx.
+
+    ``proxy`` may be a ``SeedingProxy`` ORM row or any object exposing
+    ``scheme``, ``host``, ``port``, ``username``, ``password``.
+    """
+    if proxy.username:
+        creds = f"{quote(proxy.username, safe='')}:{quote(proxy.password or '', safe='')}@"
+    else:
+        creds = ""
+    return f"{proxy.scheme}://{creds}{proxy.host}:{proxy.port}"
