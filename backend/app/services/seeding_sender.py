@@ -19,7 +19,7 @@ from app.database import SessionLocal
 from app.models.seeding import SeedingClone, SeedingLog
 from app.models.settings import NickLiveSetting
 from app.schemas.seeding import CloneRateLimitedError, HostConfigMissingError
-from app.services.http_client import get_client
+from app.services.http_client import get_client_for_proxy
 from app.services.rate_limiter import shopee_limiter
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,9 @@ class SeedingSender:
         headers = self._build_headers(clone.cookies, shopee_session_id)
         url = f"https://{_SHOPEE_HOST}/api/v1/session/{shopee_session_id}/message"
 
-        status, err = await self._post_with_retry(url, headers, body)
+        status, err = await self._post_with_retry(
+            url, headers, body, proxy_url=clone.proxy,
+        )
 
         if status == 200 and err is None:
             await self._touch_clone_last_sent(clone_id)
@@ -266,13 +268,14 @@ class SeedingSender:
 
     async def _post_with_retry(
         self, url: str, headers: dict[str, str], body: dict[str, Any],
+        proxy_url: str | None,
     ) -> tuple[int, str | None]:
         last_status = 0
         last_err: str | None = None
         for attempt in range(1, 3):  # attempts 1 and 2
             try:
                 await shopee_limiter.acquire()
-                client = get_client()
+                client = get_client_for_proxy(proxy_url)
                 resp = await client.post(
                     url, headers=headers, json=body, timeout=REPLY_TIMEOUT_SEC,
                 )

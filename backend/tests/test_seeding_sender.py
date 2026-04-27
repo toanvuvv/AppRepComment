@@ -41,7 +41,7 @@ async def test_send_builds_type100_body_with_host_credentials():
                       new=AsyncMock(return_value=SeedingLog(id=99))), \
          patch.object(sender, "_touch_clone_last_sent",
                       new=AsyncMock(return_value=None)), \
-         patch("app.services.seeding_sender.get_client") as get_client, \
+         patch("app.services.seeding_sender.get_client_for_proxy") as get_client, \
          patch("app.services.seeding_sender.shopee_limiter") as limiter:
         limiter.acquire = AsyncMock(return_value=None)
         client = MagicMock()
@@ -136,7 +136,7 @@ async def test_send_shopee_failure_writes_failed_log_auto():
                       new=AsyncMock(return_value=None)), \
          patch.object(sender, "_record_failure",
                       new=AsyncMock(return_value=None)), \
-         patch("app.services.seeding_sender.get_client") as get_client, \
+         patch("app.services.seeding_sender.get_client_for_proxy") as get_client, \
          patch("app.services.seeding_sender.shopee_limiter") as limiter:
         limiter.acquire = AsyncMock(return_value=None)
         client = MagicMock()
@@ -170,7 +170,7 @@ async def test_post_retries_on_network_exception():
          patch.object(sender, "_write_log",
                       new=AsyncMock(return_value=SeedingLog(id=1, status="success"))), \
          patch.object(sender, "_touch_clone_last_sent", new=AsyncMock(return_value=None)), \
-         patch("app.services.seeding_sender.get_client") as get_client, \
+         patch("app.services.seeding_sender.get_client_for_proxy") as get_client, \
          patch("app.services.seeding_sender.shopee_limiter") as limiter:
         limiter.acquire = AsyncMock(return_value=None)
         client = MagicMock()
@@ -202,7 +202,7 @@ async def test_post_exception_message_does_not_leak_cookie():
                       new=AsyncMock(return_value=SeedingLog(id=1, status="failed", error="x"))) as wl, \
          patch.object(sender, "_touch_clone_last_sent", new=AsyncMock(return_value=None)), \
          patch.object(sender, "_record_failure", new=AsyncMock(return_value=None)), \
-         patch("app.services.seeding_sender.get_client") as get_client, \
+         patch("app.services.seeding_sender.get_client_for_proxy") as get_client, \
          patch("app.services.seeding_sender.shopee_limiter") as limiter:
         limiter.acquire = AsyncMock(return_value=None)
         client = MagicMock()
@@ -237,7 +237,7 @@ async def test_send_failure_calls_record_failure_with_error_code():
                       new=AsyncMock(return_value=None)), \
          patch.object(sender, "_record_failure",
                       new=AsyncMock(return_value=None)) as rf, \
-         patch("app.services.seeding_sender.get_client") as get_client, \
+         patch("app.services.seeding_sender.get_client_for_proxy") as get_client, \
          patch("app.services.seeding_sender.shopee_limiter") as limiter:
         limiter.acquire = AsyncMock(return_value=None)
         client = MagicMock()
@@ -273,7 +273,7 @@ async def test_send_success_not_counted_as_failure():
                       new=AsyncMock(return_value=None)), \
          patch.object(sender, "_record_failure",
                       new=AsyncMock(return_value=None)) as rf, \
-         patch("app.services.seeding_sender.get_client") as get_client, \
+         patch("app.services.seeding_sender.get_client_for_proxy") as get_client, \
          patch("app.services.seeding_sender.shopee_limiter") as limiter:
         limiter.acquire = AsyncMock(return_value=None)
         client = MagicMock()
@@ -286,3 +286,47 @@ async def test_send_success_not_counted_as_failure():
         )
 
     rf.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_send_uses_proxied_client_when_clone_has_proxy():
+    """Sender must acquire a client via get_client_for_proxy(clone.proxy)."""
+    sender = SeedingSender()
+
+    fake_clone = type("C", (), {
+        "id": 99, "user_id": 1, "name": "C", "cookies": "x",
+        "proxy": "socks5://u:p@h:80", "proxy_id": 5,
+        "last_sent_at": None, "consecutive_failures": 0,
+    })()
+
+    fake_resp = type("R", (), {
+        "status_code": 200, "json": lambda self: {"err_code": 0},
+    })()
+
+    with patch.object(
+        sender, "_load_clone", new=AsyncMock(return_value=fake_clone),
+    ), patch.object(
+        sender, "_resolve_host_credentials",
+        new=AsyncMock(return_value={"uuid": "u", "usersig": "s"}),
+    ), patch.object(
+        sender, "_touch_clone_last_sent", new=AsyncMock(),
+    ), patch.object(
+        sender, "_write_log", new=AsyncMock(return_value="log"),
+    ), patch(
+        "app.services.seeding_sender.get_client_for_proxy",
+    ) as mock_factory, patch(
+        "app.services.seeding_sender.shopee_limiter.acquire",
+        new=AsyncMock(),
+    ):
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=fake_resp)
+        mock_factory.return_value = mock_client
+
+        await sender.send(
+            clone_id=99, nick_live_id=1, shopee_session_id=10,
+            content="hi", template_id=None, mode="manual",
+            log_session_id=42,
+        )
+
+        mock_factory.assert_called_with("socks5://u:p@h:80")
+        mock_client.post.assert_awaited()
