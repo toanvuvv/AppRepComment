@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 
 _SHOPEE_HOST = "live.shopee.vn"
 CLONE_FLOOR_SEC = 10
-REQUIRE_PROXY_SETTING_KEY = "seeding.require_proxy"
+
+from app.services.seeding_proxy_service import REQUIRE_PROXY_SETTING_KEY  # noqa: E402
 # Auto-disable a clone after this many consecutive failed sends (auto mode).
 AUTO_DISABLE_THRESHOLD = 5
 

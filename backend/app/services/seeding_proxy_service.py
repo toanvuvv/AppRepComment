@@ -8,6 +8,8 @@ from urllib.parse import quote
 
 ProxyScheme = Literal["socks5", "http", "https"]
 
+REQUIRE_PROXY_SETTING_KEY = "seeding.require_proxy"
+
 
 @dataclass(frozen=True)
 class ParsedProxy:
