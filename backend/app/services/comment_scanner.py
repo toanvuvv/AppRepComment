@@ -76,6 +76,34 @@ class CommentScanner:
         # `_new_comments`. Shares identity with `_subscribers`.
         self._new_comments = self._subscribers
 
+        # Per-nick comment counters for scan-stats endpoint.
+        self._stats_counters: dict[int, int] = {}
+        self._stats_window: dict[int, list[tuple[float, int]]] = {}
+
+    def record_comment(self, nick_live_id: int) -> None:
+        """Increment the comment counter for a nick. Called when a comment is pushed via SSE."""
+        self._stats_counters[nick_live_id] = self._stats_counters.get(nick_live_id, 0) + 1
+        window = self._stats_window.setdefault(nick_live_id, [])
+        window.append((time.time(), self._stats_counters[nick_live_id]))
+        # Trim entries older than 1 hour to bound memory.
+        cutoff = time.time() - 3600
+        while window and window[0][0] < cutoff:
+            window.pop(0)
+
+    def get_comments_in_window(self, nick_live_id: int, window_seconds: int) -> int:
+        """Return number of comments recorded in the last window_seconds."""
+        window = self._stats_window.get(nick_live_id)
+        current = self._stats_counters.get(nick_live_id, 0)
+        if not window:
+            return 0
+        cutoff = time.time() - window_seconds
+        baseline = 0
+        for ts, total in window:
+            if ts >= cutoff:
+                break
+            baseline = total
+        return current - baseline
+
     # --- status --------------------------------------------------------
 
     def is_scanning(self, nick_live_id: int) -> bool:
@@ -117,6 +145,7 @@ class CommentScanner:
         return self.subscribe(nick_live_id)
 
     def _broadcast(self, nick_live_id: int, comment: dict) -> None:
+        self.record_comment(nick_live_id)
         for q in list(self._subscribers.get(nick_live_id, ())):
             try:
                 q.put_nowait(comment)

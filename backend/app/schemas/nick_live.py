@@ -159,3 +159,11 @@ class BatchSessionEntry(BaseModel):
 
 class BatchSessionsResponse(BaseModel):
     sessions: dict[str, BatchSessionEntry]
+
+
+class ScanStats(BaseModel):
+    comments_new: int
+    replies_ok: int
+    replies_fail: int
+    replies_dropped: int
+    window_seconds: int

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.database import get_db
 from app.models.nick_live import NickLive
+from app.models.reply_log import ReplyLog
 from app.schemas.nick_live import (
     AutoPostStartRequest,
     BatchSessionEntry,
@@ -18,6 +20,7 @@ from app.schemas.nick_live import (
     NickLiveCreate,
     NickLiveResponse,
     NickLiveUpdateCookies,
+    ScanStats,
     ScanStatus,
 )
 from app.schemas.nick_live import (
@@ -323,6 +326,37 @@ def scan_status(
     _owned_nick_or_404(db, nick_live_id, current_user.id)
     status = scanner.get_status(nick_live_id)
     return ScanStatus(**status)
+
+
+@router.get("/{nick_live_id}/scan-stats", response_model=ScanStats)
+def scan_stats(
+    nick_live_id: int,
+    window: int = 300,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ScanStats:
+    _owned_nick_or_404(db, nick_live_id, current_user.id)
+    if window <= 0 or window > 3600:
+        raise HTTPException(status_code=400, detail="window must be between 1 and 3600")
+
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=window)
+    rows = (
+        db.query(ReplyLog.outcome)
+        .filter(ReplyLog.nick_live_id == nick_live_id, ReplyLog.created_at >= cutoff)
+        .all()
+    )
+    ok = sum(1 for (o,) in rows if o == "success")
+    fail = sum(1 for (o,) in rows if o == "failed")
+    dropped = sum(1 for (o,) in rows if o == "dropped")
+
+    comments_new = scanner.get_comments_in_window(nick_live_id, window)
+    return ScanStats(
+        comments_new=comments_new,
+        replies_ok=ok,
+        replies_fail=fail,
+        replies_dropped=dropped,
+        window_seconds=window,
+    )
 
 
 @router.get("/{nick_live_id}/comments")
