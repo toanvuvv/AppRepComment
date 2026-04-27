@@ -1,5 +1,5 @@
 import { Layout, Menu, Dropdown, Avatar, Space } from "antd";
-import { HomeOutlined, CommentOutlined, ExperimentOutlined, SettingOutlined, UserOutlined, LogoutOutlined, KeyOutlined, TeamOutlined } from "@ant-design/icons";
+import { CommentOutlined, ExperimentOutlined, SettingOutlined, UserOutlined, LogoutOutlined, KeyOutlined, TeamOutlined } from "@ant-design/icons";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import type { MenuProps } from "antd";
 import { useAuth } from "../contexts/AuthContext";
@@ -12,11 +12,6 @@ function AppLayout() {
   const { user, logout } = useAuth();
 
   const menuItems = [
-    {
-      key: "/",
-      icon: <HomeOutlined />,
-      label: "Trang chủ",
-    },
     {
       key: "/live-scan",
       icon: <CommentOutlined />,

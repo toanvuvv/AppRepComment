@@ -1,9 +1,8 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import AppLayout from "./components/Layout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
 import Login from "./pages/Login";
-import Home from "./pages/Home";
 import LiveScan from "./pages/LiveScan";
 import Seeding from "./pages/Seeding";
 import Settings from "./pages/Settings";
@@ -16,7 +15,7 @@ function App() {
       <Route path="/login" element={<Login />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<Navigate to="/live-scan" replace />} />
           <Route path="/live-scan" element={<LiveScan />} />
           <Route path="/seeding" element={<Seeding />} />
           <Route path="/settings" element={<Settings />} />
