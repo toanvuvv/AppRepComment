@@ -78,6 +78,32 @@ def _owned_nick(db: Session, nick_live_id: int, user_id: int) -> NickLive:
 
 # ---------- Clone CRUD ----------
 
+def _serialize_clone(db: Session, clone: SeedingClone) -> dict:
+    base = {
+        "id": clone.id,
+        "name": clone.name,
+        "shopee_user_id": clone.shopee_user_id,
+        "avatar": clone.avatar,
+        "proxy": clone.proxy,
+        "last_sent_at": clone.last_sent_at,
+        "consecutive_failures": clone.consecutive_failures,
+        "last_status": clone.last_status,
+        "last_error": clone.last_error,
+        "auto_disabled": clone.auto_disabled,
+        "created_at": clone.created_at,
+        "proxy_meta": None,
+    }
+    if clone.proxy_id is not None:
+        from app.models.seeding import SeedingProxy
+        p = db.get(SeedingProxy, clone.proxy_id)
+        if p is not None:
+            base["proxy_meta"] = {
+                "id": p.id, "scheme": p.scheme,
+                "host": p.host, "port": p.port,
+            }
+    return base
+
+
 @router.post("/clones", response_model=SeedingCloneResponse)
 def create_clone(
     payload: SeedingCloneCreate,
@@ -105,20 +131,21 @@ def create_clone(
     db.add(row)
     db.commit()
     db.refresh(row)
-    return row
+    return _serialize_clone(db, row)
 
 
 @router.get("/clones", response_model=list[SeedingCloneResponse])
 def list_clones(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[SeedingClone]:
-    return (
+):
+    rows = (
         db.query(SeedingClone)
         .filter(SeedingClone.user_id == current_user.id)
         .order_by(SeedingClone.created_at.desc())
         .all()
     )
+    return [_serialize_clone(db, r) for r in rows]
 
 
 @router.patch("/clones/{clone_id}", response_model=SeedingCloneResponse)
@@ -137,7 +164,7 @@ def update_clone(
         row.proxy = payload.proxy
     db.commit()
     db.refresh(row)
-    return row
+    return _serialize_clone(db, row)
 
 
 @router.post("/clones/{clone_id}/revive", response_model=SeedingCloneResponse)
@@ -157,7 +184,7 @@ def revive_clone(
         "seeding clone revived id=%s name=%s by user=%s",
         clone_id, row.name, current_user.id,
     )
-    return row
+    return _serialize_clone(db, row)
 
 
 @router.delete("/clones/{clone_id}", status_code=204)

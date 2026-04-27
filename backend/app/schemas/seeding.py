@@ -43,12 +43,20 @@ class SeedingCloneUpdate(BaseModel):
     proxy: str | None = Field(default=None, max_length=255)
 
 
+class CloneProxyMeta(BaseModel):
+    id: int
+    scheme: Literal["socks5", "http", "https"]
+    host: str
+    port: int
+
+
 class SeedingCloneResponse(BaseModel):
     id: int
     name: str
     shopee_user_id: int
     avatar: str | None
     proxy: str | None
+    proxy_meta: CloneProxyMeta | None = None
     last_sent_at: datetime | None
     consecutive_failures: int = 0
     last_status: str | None = None
