@@ -186,3 +186,40 @@ export async function autoReplyComments(
   );
   return res.data;
 }
+
+export interface BatchSessionEntry {
+  active_session: LiveSession | null;
+  all_sessions: LiveSession[];
+  error?: string | null;
+}
+
+export interface BatchSessionsResponse {
+  sessions: Record<string, BatchSessionEntry>;
+}
+
+export async function listSessionsBatch(
+  nickIds: number[]
+): Promise<BatchSessionsResponse> {
+  if (nickIds.length === 0) return { sessions: {} };
+  const ids = nickIds.join(",");
+  const res = await apiClient.get(`/nick-lives/sessions?ids=${ids}`);
+  return res.data;
+}
+
+export interface ScanStats {
+  comments_new: number;
+  replies_ok: number;
+  replies_fail: number;
+  replies_dropped: number;
+  window_seconds: number;
+}
+
+export async function getScanStats(
+  nickId: number,
+  windowSeconds = 300
+): Promise<ScanStats> {
+  const res = await apiClient.get(
+    `/nick-lives/${nickId}/scan-stats?window=${windowSeconds}`
+  );
+  return res.data;
+}
