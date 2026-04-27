@@ -36,7 +36,7 @@ async def test_send_builds_type100_body_with_host_credentials():
                       new=AsyncMock(return_value={"uuid": "UUID1", "usersig": "SIG1"})), \
          patch.object(sender, "_load_clone",
                       new=AsyncMock(return_value=MagicMock(
-                          id=7, cookies="SPC_EC=c", last_sent_at=None))), \
+                          id=7, user_id=1, cookies="SPC_EC=c", last_sent_at=None, proxy=None))), \
          patch.object(sender, "_write_log",
                       new=AsyncMock(return_value=SeedingLog(id=99))), \
          patch.object(sender, "_touch_clone_last_sent",
@@ -73,7 +73,7 @@ async def test_send_manual_rate_limited_raises():
 
     with patch.object(sender, "_load_clone",
                       new=AsyncMock(return_value=MagicMock(
-                          id=7, cookies="c", last_sent_at=last))):
+                          id=7, user_id=1, cookies="c", last_sent_at=last, proxy=None))):
         with pytest.raises(CloneRateLimitedError) as ei:
             await sender.send(
                 clone_id=7, nick_live_id=1, shopee_session_id=1,
@@ -90,7 +90,7 @@ async def test_send_auto_rate_limited_writes_log_returns():
 
     with patch.object(sender, "_load_clone",
                       new=AsyncMock(return_value=MagicMock(
-                          id=7, cookies="c", last_sent_at=last))), \
+                          id=7, user_id=1, cookies="c", last_sent_at=last, proxy=None))), \
          patch.object(sender, "_write_log",
                       new=AsyncMock(return_value=written_log)) as wl:
         log = await sender.send(
@@ -107,7 +107,7 @@ async def test_send_host_config_missing_raises_manual():
 
     with patch.object(sender, "_load_clone",
                       new=AsyncMock(return_value=MagicMock(
-                          id=7, cookies="c", last_sent_at=None))), \
+                          id=7, user_id=1, cookies="c", last_sent_at=None, proxy=None))), \
          patch.object(sender, "_resolve_host_credentials",
                       new=AsyncMock(side_effect=HostConfigMissingError())):
         with pytest.raises(HostConfigMissingError):
@@ -129,7 +129,7 @@ async def test_send_shopee_failure_writes_failed_log_auto():
                       new=AsyncMock(return_value={"uuid": "U", "usersig": "S"})), \
          patch.object(sender, "_load_clone",
                       new=AsyncMock(return_value=MagicMock(
-                          id=7, cookies="c", last_sent_at=None))), \
+                          id=7, user_id=1, cookies="c", last_sent_at=None, proxy=None))), \
          patch.object(sender, "_write_log",
                       new=AsyncMock(return_value=written)), \
          patch.object(sender, "_touch_clone_last_sent",
@@ -166,7 +166,7 @@ async def test_post_retries_on_network_exception():
     with patch.object(sender, "_resolve_host_credentials",
                       new=AsyncMock(return_value={"uuid": "U", "usersig": "S"})), \
          patch.object(sender, "_load_clone",
-                      new=AsyncMock(return_value=MagicMock(id=7, cookies="c", last_sent_at=None))), \
+                      new=AsyncMock(return_value=MagicMock(id=7, user_id=1, cookies="c", last_sent_at=None, proxy=None))), \
          patch.object(sender, "_write_log",
                       new=AsyncMock(return_value=SeedingLog(id=1, status="success"))), \
          patch.object(sender, "_touch_clone_last_sent", new=AsyncMock(return_value=None)), \
@@ -197,7 +197,7 @@ async def test_post_exception_message_does_not_leak_cookie():
     with patch.object(sender, "_resolve_host_credentials",
                       new=AsyncMock(return_value={"uuid": "U", "usersig": "S"})), \
          patch.object(sender, "_load_clone",
-                      new=AsyncMock(return_value=MagicMock(id=7, cookies="SPC_EC=SECRET", last_sent_at=None))), \
+                      new=AsyncMock(return_value=MagicMock(id=7, user_id=1, cookies="SPC_EC=SECRET", last_sent_at=None, proxy=None))), \
          patch.object(sender, "_write_log",
                       new=AsyncMock(return_value=SeedingLog(id=1, status="failed", error="x"))) as wl, \
          patch.object(sender, "_touch_clone_last_sent", new=AsyncMock(return_value=None)), \
@@ -230,7 +230,7 @@ async def test_send_failure_calls_record_failure_with_error_code():
                       new=AsyncMock(return_value={"uuid": "U", "usersig": "S"})), \
          patch.object(sender, "_load_clone",
                       new=AsyncMock(return_value=MagicMock(
-                          id=7, name="c7", cookies="c", last_sent_at=None))), \
+                          id=7, user_id=1, name="c7", cookies="c", last_sent_at=None, proxy=None))), \
          patch.object(sender, "_write_log",
                       new=AsyncMock(return_value=SeedingLog(id=1, status="failed"))), \
          patch.object(sender, "_touch_clone_last_sent",
@@ -266,7 +266,7 @@ async def test_send_success_not_counted_as_failure():
                       new=AsyncMock(return_value={"uuid": "U", "usersig": "S"})), \
          patch.object(sender, "_load_clone",
                       new=AsyncMock(return_value=MagicMock(
-                          id=7, name="c7", cookies="c", last_sent_at=None))), \
+                          id=7, user_id=1, name="c7", cookies="c", last_sent_at=None, proxy=None))), \
          patch.object(sender, "_write_log",
                       new=AsyncMock(return_value=SeedingLog(id=1, status="success"))), \
          patch.object(sender, "_touch_clone_last_sent",
@@ -330,3 +330,103 @@ async def test_send_uses_proxied_client_when_clone_has_proxy():
 
         mock_factory.assert_called_with("socks5://u:p@h:80")
         mock_client.post.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_require_proxy_skips_clone_without_proxy_auto_mode():
+    sender = SeedingSender()
+    fake_clone = type("C", (), {
+        "id": 1, "user_id": 7, "name": "C", "cookies": "x",
+        "proxy": None, "proxy_id": None,
+        "last_sent_at": None, "consecutive_failures": 0,
+    })()
+
+    with patch.object(
+        sender, "_load_clone", new=AsyncMock(return_value=fake_clone),
+    ), patch.object(
+        sender, "_get_require_proxy", new=AsyncMock(return_value=True),
+    ), patch.object(
+        sender, "_record_failure", new=AsyncMock(),
+    ), patch.object(
+        sender, "_write_log", new=AsyncMock(return_value="log"),
+    ) as mock_log, patch(
+        "app.services.seeding_sender.get_client_for_proxy",
+    ) as mock_factory:
+        await sender.send(
+            clone_id=1, nick_live_id=1, shopee_session_id=10,
+            content="hi", template_id=None, mode="auto",
+            log_session_id=42,
+        )
+        mock_factory.assert_not_called()
+        mock_log.assert_awaited()
+        kwargs = mock_log.call_args.kwargs
+        assert kwargs["status"] == "failed"
+        assert kwargs["error"] == "no_proxy"
+
+
+@pytest.mark.asyncio
+async def test_require_proxy_raises_for_manual_mode():
+    sender = SeedingSender()
+    fake_clone = type("C", (), {
+        "id": 1, "user_id": 7, "name": "C", "cookies": "x",
+        "proxy": None, "proxy_id": None,
+        "last_sent_at": None, "consecutive_failures": 0,
+    })()
+
+    with patch.object(
+        sender, "_load_clone", new=AsyncMock(return_value=fake_clone),
+    ), patch.object(
+        sender, "_get_require_proxy", new=AsyncMock(return_value=True),
+    ), patch.object(
+        sender, "_record_failure", new=AsyncMock(),
+    ), patch.object(
+        sender, "_write_log", new=AsyncMock(return_value="log"),
+    ):
+        with pytest.raises(RuntimeError, match="no_proxy"):
+            await sender.send(
+                clone_id=1, nick_live_id=1, shopee_session_id=10,
+                content="hi", template_id=None, mode="manual",
+                log_session_id=42,
+            )
+
+
+@pytest.mark.asyncio
+async def test_require_proxy_off_allows_direct_send():
+    """When require_proxy=False, missing clone.proxy still sends direct."""
+    sender = SeedingSender()
+    fake_clone = type("C", (), {
+        "id": 1, "user_id": 7, "name": "C", "cookies": "x",
+        "proxy": None, "proxy_id": None,
+        "last_sent_at": None, "consecutive_failures": 0,
+    })()
+    fake_resp = type("R", (), {
+        "status_code": 200, "json": lambda self: {"err_code": 0},
+    })()
+
+    with patch.object(
+        sender, "_load_clone", new=AsyncMock(return_value=fake_clone),
+    ), patch.object(
+        sender, "_get_require_proxy", new=AsyncMock(return_value=False),
+    ), patch.object(
+        sender, "_resolve_host_credentials",
+        new=AsyncMock(return_value={"uuid": "u", "usersig": "s"}),
+    ), patch.object(
+        sender, "_touch_clone_last_sent", new=AsyncMock(),
+    ), patch.object(
+        sender, "_write_log", new=AsyncMock(return_value="log"),
+    ), patch(
+        "app.services.seeding_sender.get_client_for_proxy",
+    ) as mock_factory, patch(
+        "app.services.seeding_sender.shopee_limiter.acquire",
+        new=AsyncMock(),
+    ):
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=fake_resp)
+        mock_factory.return_value = mock_client
+
+        await sender.send(
+            clone_id=1, nick_live_id=1, shopee_session_id=10,
+            content="hi", template_id=None, mode="manual",
+            log_session_id=42,
+        )
+        mock_factory.assert_called_with(None)

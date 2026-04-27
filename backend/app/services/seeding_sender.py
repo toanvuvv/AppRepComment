@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 _SHOPEE_HOST = "live.shopee.vn"
 CLONE_FLOOR_SEC = 10
+REQUIRE_PROXY_SETTING_KEY = "seeding.require_proxy"
 # Auto-disable a clone after this many consecutive failed sends (auto mode).
 AUTO_DISABLE_THRESHOLD = 5
 
@@ -81,6 +82,22 @@ class SeedingSender:
                 status="rate_limited",
                 error=f"floor {retry_after}s",
             )
+
+        require_proxy = await self._get_require_proxy(clone.user_id)
+        if require_proxy and not clone.proxy:
+            logger.warning(
+                "seeding skipped clone_id=%s name=%s reason=no_proxy",
+                clone_id, clone_name,
+            )
+            await self._record_failure(clone_id, "no_proxy")
+            log_row = await self._write_log(
+                log_session_id=log_session_id, clone_id=clone_id,
+                template_id=template_id, content=content,
+                status="failed", error="no_proxy",
+            )
+            if mode == "manual":
+                raise RuntimeError("no_proxy")
+            return log_row
 
         try:
             creds = await self._resolve_host_credentials(nick_live_id)
@@ -152,6 +169,18 @@ class SeedingSender:
 
     async def _load_clone(self, clone_id: int) -> SeedingClone | None:
         return await asyncio.to_thread(self._load_clone_sync, clone_id)
+
+    async def _get_require_proxy(self, user_id: int) -> bool:
+        return await asyncio.to_thread(
+            self._get_require_proxy_sync, user_id,
+        )
+
+    def _get_require_proxy_sync(self, user_id: int) -> bool:
+        from app.services.settings_service import SettingsService
+        with SessionLocal() as db:
+            svc = SettingsService(db, user_id=user_id)
+            value = svc.get_setting(REQUIRE_PROXY_SETTING_KEY)
+            return value == "true"
 
     async def _resolve_host_credentials(self, nick_live_id: int) -> dict[str, str]:
         return await asyncio.to_thread(self._resolve_host_credentials_sync, nick_live_id)
