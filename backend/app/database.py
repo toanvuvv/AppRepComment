@@ -199,3 +199,6 @@ def init_db():
 
     m010 = importlib.import_module("migrations.010_system_keys_and_ai_mode")
     m010.migrate()
+
+    m011 = importlib.import_module("migrations.011_seeding_proxies")
+    m011.migrate()
