@@ -171,6 +171,7 @@ def init_db():
     from app.models import knowledge_product  # noqa: F401
     from app.models import reply_log  # noqa: F401
     from app.models import user  # noqa: F401
+    from app.models import seeding  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _migrate_add_columns()

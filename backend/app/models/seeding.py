@@ -37,6 +37,11 @@ class SeedingClone(Base):
     avatar: Mapped[str | None] = mapped_column(String(500), nullable=True)
     cookies: Mapped[str] = mapped_column(EncryptedString, nullable=False)
     proxy: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    proxy_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("seeding_proxies.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     last_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     consecutive_failures: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0,
@@ -117,5 +122,24 @@ class SeedingLog(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     sent_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False,
+    )
+
+
+class SeedingProxy(Base):
+    __tablename__ = "seeding_proxies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    scheme: Mapped[str] = mapped_column(String(10), nullable=False)
+    host: Mapped[str] = mapped_column(String(255), nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc), nullable=False,
     )
