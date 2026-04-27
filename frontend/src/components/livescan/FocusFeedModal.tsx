@@ -15,23 +15,23 @@ interface FocusFeedModalProps {
 }
 
 export default function FocusFeedModal({ nick, open, onClose }: FocusFeedModalProps) {
+  const nickId = nick?.id ?? null;
+
   const session = useLiveScanStore((s) =>
-    nick ? s.sessionsByNick[nick.id]?.active ?? null : null
+    nickId !== null ? s.sessionsByNick[nickId]?.active ?? null : null
   );
   const isScanning = useLiveScanStore((s) =>
-    nick ? s.scanningNickIds.has(nick.id) : false
+    nickId !== null ? s.scanningNickIds.has(nickId) : false
   );
   const stopScanFor = useLiveScanStore((s) => s.stopScanFor);
 
   const { index: replyLogIndex } = useReplyLogs(
-    nick?.id ?? null,
-    open && (isScanning || open),
+    nickId,
+    open && nickId !== null,
     null,
   );
 
-  if (!nick) return null;
-
-  const titleNode = (
+  const titleNode = nick ? (
     <Space>
       <Title level={5} style={{ margin: 0 }}>@{nick.name}</Title>
       {session ? (
@@ -40,49 +40,51 @@ export default function FocusFeedModal({ nick, open, onClose }: FocusFeedModalPr
         <Tag>Offline</Tag>
       )}
     </Space>
-  );
+  ) : null;
 
   return (
     <Modal
       title={titleNode}
-      open={open}
+      open={open && nick !== null}
       onCancel={onClose}
       footer={null}
       width={1000}
-      bodyStyle={{ height: "75vh", padding: 16, overflow: "auto" }}
-      destroyOnClose={false}
+      styles={{ body: { height: "75vh", padding: 16, overflow: "auto" } }}
+      destroyOnHidden
     >
-      <Tabs
-        defaultActiveKey="comments"
-        items={[
-          {
-            key: "comments",
-            label: "Comments",
-            children: (
-              <div>
-                <CommentFeedView nickLiveId={nick.id} replyLogIndex={replyLogIndex} />
-                {isScanning && (
-                  <div style={{ marginTop: 12 }}>
-                    <Button danger icon={<StopOutlined />} onClick={() => stopScanFor(nick.id)}>
-                      Dừng quét
-                    </Button>
-                  </div>
-                )}
-                {!isScanning && (
-                  <Text type="secondary" style={{ display: "block", marginTop: 12 }}>
-                    Bật toggle Scan trong bảng để bắt đầu nhận comment.
-                  </Text>
-                )}
-              </div>
-            ),
-          },
-          {
-            key: "logs",
-            label: "Reply Logs",
-            children: <ReplyLogsPanel nickLiveId={nick.id} active={open} />,
-          },
-        ]}
-      />
+      {nick && (
+        <Tabs
+          defaultActiveKey="comments"
+          items={[
+            {
+              key: "comments",
+              label: "Comments",
+              children: (
+                <div>
+                  <CommentFeedView nickLiveId={nick.id} replyLogIndex={replyLogIndex} />
+                  {isScanning && (
+                    <div style={{ marginTop: 12 }}>
+                      <Button danger icon={<StopOutlined />} onClick={() => stopScanFor(nick.id)}>
+                        Dừng quét
+                      </Button>
+                    </div>
+                  )}
+                  {!isScanning && (
+                    <Text type="secondary" style={{ display: "block", marginTop: 12 }}>
+                      Bật toggle Scan trong bảng để bắt đầu nhận comment.
+                    </Text>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: "logs",
+              label: "Reply Logs",
+              children: <ReplyLogsPanel nickLiveId={nick.id} active={open} />,
+            },
+          ]}
+        />
+      )}
     </Modal>
   );
 }

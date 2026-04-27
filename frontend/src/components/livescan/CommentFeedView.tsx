@@ -7,6 +7,8 @@ import { useLiveScanStore } from "../../stores/liveScanStore";
 
 const { Text } = Typography;
 
+const EMPTY_COMMENTS: CommentItem[] = [];
+
 const OUTCOME_META: Record<ReplyOutcome, { color: string; label: string }> = {
   success: { color: "green", label: "Đã reply" },
   failed: { color: "red", label: "Reply fail" },
@@ -69,7 +71,7 @@ interface CommentFeedViewProps {
 }
 
 export default function CommentFeedView({ nickLiveId, replyLogIndex }: CommentFeedViewProps) {
-  const comments = useLiveScanStore((s) => s.commentsByNick[nickLiveId] ?? []);
+  const comments = useLiveScanStore((s) => s.commentsByNick[nickLiveId] ?? EMPTY_COMMENTS);
   const isConnected = useLiveScanStore((s) => s.sseConnected[nickLiveId] ?? false);
   const isScanning = useLiveScanStore((s) => s.scanningNickIds.has(nickLiveId));
 
@@ -109,7 +111,7 @@ export default function CommentFeedView({ nickLiveId, replyLogIndex }: CommentFe
   );
 
   return (
-    <Card title={title} bodyStyle={{ padding: 12 }}>
+    <Card title={title} styles={{ body: { padding: 12 } }}>
       <div ref={scrollRef} style={{ maxHeight: 500, overflowY: "auto", contain: "layout style" }}>
         {comments.length === 0 ? (
           <Text type="secondary">Chưa có comment nào...</Text>
