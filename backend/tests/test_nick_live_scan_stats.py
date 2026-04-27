@@ -28,7 +28,10 @@ def _seed():
         db.add(User(username="ss_owner", password_hash=hash_password("pw12345678"), role="user", max_nicks=10))
         db.commit()
     yield
-    scanner._stats_counters.clear() if hasattr(scanner, "_stats_counters") else None
+    if hasattr(scanner, "_stats_counters"):
+        scanner._stats_counters.clear()
+    if hasattr(scanner, "_stats_window"):
+        scanner._stats_window.clear()
     with SessionLocal() as db:
         db.query(ReplyLog).delete()
         db.query(NickLive).filter(
