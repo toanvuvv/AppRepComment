@@ -123,3 +123,83 @@ def format_url(proxy) -> str:
     else:
         creds = ""
     return f"{proxy.scheme}://{creds}{proxy.host}:{proxy.port}"
+
+
+from app.models.seeding import SeedingClone as _SeedingClone
+from app.schemas.seeding_proxy import ProxyAssignResult
+
+
+def assign_round_robin(user_id: int, only_unassigned: bool) -> ProxyAssignResult:
+    """Round-robin assign proxies to clones (sorted by id ASC).
+
+    With N proxies and M clones, ``clones[i].proxy_id = proxies[i mod N].id``.
+    If ``only_unassigned`` is True, skip clones that already have a proxy.
+    """
+    with SessionLocal() as db:
+        proxies = (
+            db.query(SeedingProxy)
+            .filter(SeedingProxy.user_id == user_id)
+            .order_by(SeedingProxy.id.asc())
+            .all()
+        )
+        if not proxies:
+            return ProxyAssignResult(assigned=0, reason="no_proxies")
+
+        q = (
+            db.query(_SeedingClone)
+            .filter(_SeedingClone.user_id == user_id)
+        )
+        if only_unassigned:
+            q = q.filter(_SeedingClone.proxy_id.is_(None))
+        clones = q.order_by(_SeedingClone.id.asc()).all()
+
+        if not clones:
+            total = (
+                db.query(_SeedingClone)
+                .filter(_SeedingClone.user_id == user_id)
+                .count()
+            )
+            if total == 0:
+                return ProxyAssignResult(assigned=0, reason="no_clones")
+            return ProxyAssignResult(assigned=0, reason="all_assigned")
+
+        n = len(proxies)
+        for i, clone in enumerate(clones):
+            target = proxies[i % n]
+            clone.proxy_id = target.id
+            clone.proxy = format_url(target)
+        db.commit()
+
+        return ProxyAssignResult(assigned=len(clones), reason="ok")
+
+
+def refresh_clone_cache_for_proxy(proxy_id: int) -> None:
+    """Refresh ``clone.proxy`` URL cache on every clone using this proxy."""
+    with SessionLocal() as db:
+        proxy = db.get(SeedingProxy, proxy_id)
+        if proxy is None:
+            return
+        url = format_url(proxy)
+        clones = db.query(_SeedingClone).filter(
+            _SeedingClone.proxy_id == proxy_id
+        ).all()
+        for c in clones:
+            c.proxy = url
+        db.commit()
+
+
+def clear_clone_cache_for_proxy(proxy_id: int) -> None:
+    """Set ``proxy_id`` and ``proxy`` to NULL on clones using this proxy.
+
+    Caller is expected to call this BEFORE deleting the proxy row so the
+    explicit clear runs in the same transaction (FK ON DELETE SET NULL
+    handles the column too, but we also clear the cached string).
+    """
+    with SessionLocal() as db:
+        clones = db.query(_SeedingClone).filter(
+            _SeedingClone.proxy_id == proxy_id
+        ).all()
+        for c in clones:
+            c.proxy_id = None
+            c.proxy = None
+        db.commit()
