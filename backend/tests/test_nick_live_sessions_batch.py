@@ -136,3 +136,38 @@ def test_batch_sessions_empty_ids_returns_empty():
     r = client.get("/api/nick-lives/sessions?ids=", headers=_hdr(tok))
     assert r.status_code == 200
     assert r.json() == {"sessions": {}}
+
+
+def test_batch_sessions_invalid_ids_returns_400():
+    tok = _login("sb_owner")
+    r = client.get("/api/nick-lives/sessions?ids=abc,def", headers=_hdr(tok))
+    assert r.status_code == 400
+
+
+def test_batch_sessions_malformed_session_isolated():
+    """Malformed Shopee response (missing sessionId) should land in error, not crash batch."""
+    owner = _user_id("sb_owner")
+    nid1 = _create_nick(owner, "n1")
+    nid2 = _create_nick(owner, "n2")
+    tok = _login("sb_owner")
+
+    call_count = {"n": 0}
+
+    async def mixed(cookies: str):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # malformed: list entry missing sessionId
+            return {"data": {"list": [{"title": "broken"}]}}
+        return _live_response(42)
+
+    with patch("app.routers.nick_live.get_live_sessions", new=AsyncMock(side_effect=mixed)):
+        r = client.get(f"/api/nick-lives/sessions?ids={nid1},{nid2}", headers=_hdr(tok))
+
+    assert r.status_code == 200
+    body = r.json()
+    keys = list(body["sessions"].keys())
+    assert len(keys) == 2
+    failed = [k for k in keys if body["sessions"][k].get("error")]
+    ok = [k for k in keys if not body["sessions"][k].get("error")]
+    assert len(failed) == 1 and len(ok) == 1
+    assert body["sessions"][ok[0]]["active_session"]["sessionId"] == 42

@@ -217,30 +217,28 @@ async def list_sessions_batch(
             await asyncio.sleep(0.2)
         try:
             data = await get_live_sessions(nick.cookies)
+            sessions_data = data.get("data", {}).get("list", [])
+            sessions: list[LiveSession] = []
+            active: LiveSession | None = None
+            for s in sessions_data:
+                session = LiveSession(
+                    sessionId=s["sessionId"],
+                    title=s.get("title", ""),
+                    coverImage=s.get("coverImage", ""),
+                    startTime=s.get("startTime", 0),
+                    duration=s.get("duration", 0),
+                    status=s.get("status", 0),
+                    views=s.get("views", 0),
+                    viewers=s.get("viewers", 0),
+                    peakViewers=s.get("peakViewers", 0),
+                    comments=s.get("comments", 0),
+                )
+                sessions.append(session)
+                if session.status == 1 and session.duration == 0:
+                    active = session
+            result[str(nick.id)] = BatchSessionEntry(active_session=active, all_sessions=sessions)
         except Exception as e:
             result[str(nick.id)] = BatchSessionEntry(error=str(e))
-            continue
-
-        sessions_data = data.get("data", {}).get("list", [])
-        sessions: list[LiveSession] = []
-        active: LiveSession | None = None
-        for s in sessions_data:
-            session = LiveSession(
-                sessionId=s["sessionId"],
-                title=s.get("title", ""),
-                coverImage=s.get("coverImage", ""),
-                startTime=s.get("startTime", 0),
-                duration=s.get("duration", 0),
-                status=s.get("status", 0),
-                views=s.get("views", 0),
-                viewers=s.get("viewers", 0),
-                peakViewers=s.get("peakViewers", 0),
-                comments=s.get("comments", 0),
-            )
-            sessions.append(session)
-            if session.status == 1 and session.duration == 0:
-                active = session
-        result[str(nick.id)] = BatchSessionEntry(active_session=active, all_sessions=sessions)
 
     return BatchSessionsResponse(sessions=result)
 
