@@ -8,6 +8,12 @@ export interface SeedingClone {
   shopee_user_id: number;
   avatar: string | null;
   proxy: string | null;
+  proxy_meta: {
+    id: number;
+    scheme: "socks5" | "http" | "https";
+    host: string;
+    port: number;
+  } | null;
   last_sent_at: string | null;
   consecutive_failures: number;
   last_status: "success" | "failed" | "rate_limited" | null;
