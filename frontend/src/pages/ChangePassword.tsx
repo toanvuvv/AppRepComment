@@ -23,21 +23,23 @@ export default function ChangePasswordPage() {
   };
 
   return (
-    <Card title="Đổi mật khẩu" style={{ maxWidth: 480, margin: "24px auto" }}>
-      <Form layout="vertical" onFinish={onFinish}>
-        <Form.Item label="Mật khẩu hiện tại" name="old" rules={[{ required: true }]}>
-          <Input.Password />
-        </Form.Item>
-        <Form.Item label="Mật khẩu mới" name="next"
-                   rules={[{ required: true, min: 8, message: "Tối thiểu 8 ký tự" }]}>
-          <Input.Password />
-        </Form.Item>
-        <Form.Item label="Xác nhận mật khẩu mới" name="confirm"
-                   rules={[{ required: true }]}>
-          <Input.Password />
-        </Form.Item>
-        <Button type="primary" htmlType="submit" loading={loading}>Lưu</Button>
-      </Form>
-    </Card>
+    <div className="app-page">
+      <Card title="Đổi mật khẩu" style={{ maxWidth: 480, width: "100%", margin: "24px auto" }}>
+        <Form layout="vertical" onFinish={onFinish}>
+          <Form.Item label="Mật khẩu hiện tại" name="old" rules={[{ required: true }]}>
+            <Input.Password />
+          </Form.Item>
+          <Form.Item label="Mật khẩu mới" name="next"
+                     rules={[{ required: true, min: 8, message: "Tối thiểu 8 ký tự" }]}>
+            <Input.Password />
+          </Form.Item>
+          <Form.Item label="Xác nhận mật khẩu mới" name="confirm"
+                     rules={[{ required: true }]}>
+            <Input.Password />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" loading={loading}>Lưu</Button>
+        </Form>
+      </Card>
+    </div>
   );
 }

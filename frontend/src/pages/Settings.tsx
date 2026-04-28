@@ -274,7 +274,7 @@ function Settings() {
               onChange={(e) => setApiKey(e.target.value)}
             />
             <Select
-              style={{ width: 200 }}
+              style={{ width: "min(200px, 100%)" }}
               value={model}
               options={OPENAI_MODELS}
               onChange={setModel}
@@ -338,7 +338,7 @@ function Settings() {
           <Space>
             <Text>Model:</Text>
             <Select
-              style={{ width: 200 }}
+              style={{ width: "min(200px, 100%)" }}
               value={knowledgeModel}
               options={OPENAI_MODELS}
               onChange={setKnowledgeModel}
@@ -391,12 +391,12 @@ function Settings() {
                 <Tag color="green">Đã cấu hình</Tag> Nhập key mới để thay thế.
               </Text>
             )}
-            <Space>
+            <Space wrap>
               <Input.Password
                 placeholder={sysKeys?.relive_api_key_set ? "Nhập key mới để thay thế" : "Relive API key"}
                 value={sysRelive}
                 onChange={(e) => setSysRelive(e.target.value)}
-                style={{ width: 400 }}
+                style={{ width: "min(400px, 100%)" }}
               />
               <Button type="primary" onClick={handleSaveSysRelive} loading={sysReliveLoading}>
                 Lưu
@@ -417,7 +417,7 @@ function Settings() {
                 onChange={(e) => setSysOpenAIKey(e.target.value)}
               />
               <Select
-                style={{ width: 200 }}
+                style={{ width: "min(200px, 100%)" }}
                 value={sysOpenAIModel}
                 options={OPENAI_MODELS}
                 onChange={setSysOpenAIModel}

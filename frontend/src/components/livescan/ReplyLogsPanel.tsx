@@ -112,7 +112,7 @@ export default function ReplyLogsPanel({ nickLiveId, active }: ReplyLogsPanelPro
 
       <Space wrap style={{ marginBottom: 12 }}>
         <Select
-          style={{ minWidth: 360 }}
+          style={{ width: "min(360px, 100%)" }}
           value={selectedSessionId}
           placeholder="Chọn session"
           onChange={(v) => setSelectedSessionId(v)}

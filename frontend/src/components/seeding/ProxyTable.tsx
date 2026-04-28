@@ -157,6 +157,7 @@ export function ProxyTable({
         loading={loading}
         size="small"
         pagination={false}
+        scroll={{ x: 720 }}
       />
       <Modal
         open={creating || editing !== null}

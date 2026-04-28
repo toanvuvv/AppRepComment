@@ -176,7 +176,7 @@ export function ManualSendTab({
               Clone gửi
             </Text>
             <Select
-              style={{ width: 240 }}
+              style={{ width: "min(240px, 100%)" }}
               placeholder="Chọn clone"
               value={selectedCloneId}
               onChange={setSelectedCloneId}
@@ -227,11 +227,11 @@ export function ManualSendTab({
                     {statusLabel(item.status)}
                   </Tag>
                   <Text strong>{item.cloneName}</Text>
-                  <Text ellipsis style={{ maxWidth: 200 }}>
+                  <Text style={{ maxWidth: 200, overflowWrap: "anywhere" }}>
                     {item.content}
                   </Text>
                   {item.note && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: 12, overflowWrap: "anywhere" }}>
                       {item.note}
                     </Text>
                   )}

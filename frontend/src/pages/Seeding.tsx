@@ -64,7 +64,7 @@ function SeedingPage() {
 
   const nickPicker = (
     <Select
-      style={{ width: 200 }}
+      style={{ width: "min(240px, 100%)" }}
       placeholder="Chọn nick host"
       value={nickLiveId}
       onChange={(v) => {
@@ -80,7 +80,7 @@ function SeedingPage() {
 
   const sessionPicker = (
     <Select
-      style={{ width: 240 }}
+      style={{ width: "min(240px, 100%)" }}
       placeholder="Chọn phiên Shopee"
       value={shopeeSessionId}
       onChange={setShopeeSessionId}

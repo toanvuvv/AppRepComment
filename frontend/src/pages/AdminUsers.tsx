@@ -16,12 +16,21 @@ import {
 import { useEffect, useState } from "react";
 import {
   AdminUser,
+  AdminUserNick,
   AiKeyMode,
   createUser,
   deleteUser,
+  listUserNicks,
   listUsers,
   updateUser,
 } from "../api/admin";
+
+const REPLY_MODE_COLOR: Record<AdminUserNick["reply_mode"], string> = {
+  none: "default",
+  knowledge: "purple",
+  ai: "geekblue",
+  template: "cyan",
+};
 
 const MODE_OPTIONS = [
   { value: "system", label: "System (dùng key admin)" },
@@ -35,11 +44,28 @@ export default function AdminUsersPage() {
   const [pwdModal, setPwdModal] = useState<AdminUser | null>(null);
   const [createForm] = Form.useForm();
   const [pwdForm] = Form.useForm();
+  const [nicksByUser, setNicksByUser] = useState<Record<number, AdminUserNick[]>>({});
+  const [nicksLoading, setNicksLoading] = useState<Record<number, boolean>>({});
+  const [expandedKeys, setExpandedKeys] = useState<number[]>([]);
+
+  const loadNicks = async (userId: number) => {
+    setNicksLoading((s) => ({ ...s, [userId]: true }));
+    try {
+      const data = await listUserNicks(userId);
+      setNicksByUser((s) => ({ ...s, [userId]: data }));
+    } catch {
+      message.error("Không tải được danh sách nick");
+    } finally {
+      setNicksLoading((s) => ({ ...s, [userId]: false }));
+    }
+  };
 
   const refresh = async () => {
     setLoading(true);
     try {
       setRows(await listUsers());
+      setNicksByUser({});
+      setExpandedKeys([]);
     } finally {
       setLoading(false);
     }
@@ -134,6 +160,78 @@ export default function AdminUsersPage() {
         rowKey="id"
         loading={loading}
         dataSource={rows}
+        scroll={{ x: 1100 }}
+        expandable={{
+          expandedRowKeys: expandedKeys,
+          onExpand: (expanded, record) => {
+            const id = record.id;
+            setExpandedKeys((keys) =>
+              expanded ? [...keys, id] : keys.filter((k) => k !== id)
+            );
+            if (expanded && nicksByUser[id] === undefined) {
+              loadNicks(id);
+            }
+          },
+          rowExpandable: (record) => record.nick_count > 0,
+          expandedRowRender: (record) => {
+            const data = nicksByUser[record.id] ?? [];
+            return (
+              <Table
+                rowKey="id"
+                size="small"
+                pagination={false}
+                loading={nicksLoading[record.id]}
+                dataSource={data}
+                scroll={{ x: 800 }}
+                columns={[
+                  { title: "Nick", dataIndex: "name" },
+                  { title: "Shopee UID", dataIndex: "shopee_user_id" },
+                  {
+                    title: "Rep comment",
+                    render: (_: unknown, n: AdminUserNick) => (
+                      <Tag color={n.reply_enabled ? "green" : "default"}>
+                        {n.reply_enabled ? "ON" : "OFF"}
+                      </Tag>
+                    ),
+                  },
+                  {
+                    title: "Reply mode",
+                    dataIndex: "reply_mode",
+                    render: (m: AdminUserNick["reply_mode"]) => (
+                      <Tag color={REPLY_MODE_COLOR[m]}>{m}</Tag>
+                    ),
+                  },
+                  {
+                    title: "Targets",
+                    render: (_: unknown, n: AdminUserNick) => (
+                      <Space size={4}>
+                        {n.reply_to_host && <Tag>host</Tag>}
+                        {n.reply_to_moderator && <Tag>moderator</Tag>}
+                        {!n.reply_to_host && !n.reply_to_moderator && (
+                          <Tag color="default">—</Tag>
+                        )}
+                      </Space>
+                    ),
+                  },
+                  {
+                    title: "Auto-post",
+                    dataIndex: "auto_post_enabled",
+                    render: (v: boolean) => (
+                      <Tag color={v ? "green" : "default"}>{v ? "ON" : "OFF"}</Tag>
+                    ),
+                  },
+                  {
+                    title: "Auto-pin",
+                    dataIndex: "auto_pin_enabled",
+                    render: (v: boolean) => (
+                      <Tag color={v ? "green" : "default"}>{v ? "ON" : "OFF"}</Tag>
+                    ),
+                  },
+                ]}
+              />
+            );
+          },
+        }}
         columns={[
           { title: "Username", dataIndex: "username" },
           {
@@ -147,6 +245,20 @@ export default function AdminUsersPage() {
             title: "Nicks",
             render: (_: unknown, u: AdminUser) =>
               `${u.nick_count} / ${u.max_nicks ?? "∞"}`,
+          },
+          {
+            title: "Clones",
+            dataIndex: "clone_count",
+            render: (n: number) => <Tag color="blue">{n}</Tag>,
+          },
+          {
+            title: "Rep ON / Live",
+            render: (_: unknown, u: AdminUser) => {
+              const on = u.live_reply_enabled_count;
+              const total = u.nick_count;
+              const color = on === 0 ? "default" : on === total ? "green" : "orange";
+              return <Tag color={color}>{on} / {total}</Tag>;
+            },
           },
           {
             title: "Max nicks",
@@ -165,7 +277,7 @@ export default function AdminUsersPage() {
             title: "AI Key Mode",
             render: (_: unknown, u: AdminUser) => (
               <Select
-                style={{ width: 200 }}
+                style={{ width: "min(200px, 100%)" }}
                 value={u.ai_key_mode}
                 options={MODE_OPTIONS}
                 onChange={(v) => handleMode(u, v as AiKeyMode)}
@@ -209,6 +321,7 @@ export default function AdminUsersPage() {
         open={createOpen}
         onCancel={() => setCreateOpen(false)}
         onOk={() => createForm.submit()}
+        width="min(520px, calc(100vw - 16px))"
       >
         <Form
           form={createForm}
@@ -244,6 +357,7 @@ export default function AdminUsersPage() {
         open={!!pwdModal}
         onCancel={() => setPwdModal(null)}
         onOk={() => pwdForm.submit()}
+        width="min(520px, calc(100vw - 16px))"
       >
         <Form form={pwdForm} layout="vertical" onFinish={handleReset}>
           <Form.Item name="new_password" label="Mật khẩu mới" rules={[{ required: true, min: 8 }]}>

@@ -48,12 +48,17 @@ export default function NickLiveTable({
       title: "Nick",
       key: "nick",
       width: 240,
+      ellipsis: true,
       render: (_, r) => (
         <Space>
           <Avatar src={r.avatar} icon={!r.avatar ? <UserOutlined /> : undefined} />
-          <div>
-            <div><Text strong>{r.name}</Text></div>
-            <Text type="secondary" style={{ fontSize: 11 }}>UID: {r.user_id}</Text>
+          <div style={{ minWidth: 0, maxWidth: 180 }}>
+            <div>
+              <Tooltip title={r.name}>
+                <Text strong ellipsis style={{ display: "block", maxWidth: 170 }}>{r.name}</Text>
+              </Tooltip>
+            </div>
+            <Text type="secondary" ellipsis style={{ fontSize: 11, display: "block", maxWidth: 170 }}>UID: {r.user_id}</Text>
           </div>
         </Space>
       ),
@@ -62,12 +67,13 @@ export default function NickLiveTable({
       title: "Trạng thái",
       key: "status",
       width: 160,
+      ellipsis: true,
       render: (_, r) => {
-        if (cookieExpiredByNick[r.id]) return <Tag color="warning">⚠️ Cookie hết hạn</Tag>;
+        if (cookieExpiredByNick[r.id]) return <Tag color="warning" style={{ whiteSpace: "nowrap" }}>⚠️ Cookie hết hạn</Tag>;
         const entry = sessionsByNick[r.id];
-        if (entry?.error) return <Tooltip title={entry.error}><Tag color="error">Lỗi</Tag></Tooltip>;
-        if (entry?.active) return <Tag color="success">🔴 Đang live</Tag>;
-        return <Tag>⚪ Offline</Tag>;
+        if (entry?.error) return <Tooltip title={entry.error}><Tag color="error" style={{ whiteSpace: "nowrap" }}>Lỗi</Tag></Tooltip>;
+        if (entry?.active) return <Tag color="success" style={{ whiteSpace: "nowrap" }}>🔴 Đang live</Tag>;
+        return <Tag style={{ whiteSpace: "nowrap" }}>⚪ Offline</Tag>;
       },
     },
     {
@@ -144,6 +150,7 @@ export default function NickLiveTable({
       columns={columns}
       pagination={false}
       size="middle"
+      scroll={{ x: "max-content" }}
       onRow={(r) => ({
         onClick: () => onFocus(r.id),
         style: {

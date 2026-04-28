@@ -440,7 +440,7 @@ export default function NickConfigModal({
             )}
           </div>
 
-          <Space>
+          <Space wrap>
             <Button
               type="primary"
               icon={<ThunderboltOutlined />}
@@ -458,14 +458,14 @@ export default function NickConfigModal({
       label: "Auto-post",
       children: (
         <Space direction="vertical" style={{ width: "100%" }} size="middle">
-          <Space align="center">
+          <Space align="center" wrap>
             <Text strong>Auto-post enabled:</Text>
             <Switch
               checked={settings?.auto_post_enabled ?? false}
               onChange={(val) => handleUpdateSettings({ auto_post_enabled: val })}
             />
           </Space>
-          <Space align="center">
+          <Space align="center" wrap>
             <Text>Gửi tới Host:</Text>
             <Switch
               checked={settings?.auto_post_to_host ?? false}
@@ -476,7 +476,7 @@ export default function NickConfigModal({
               <Tag color="default">Chưa có host config</Tag>
             )}
           </Space>
-          <Space align="center">
+          <Space align="center" wrap>
             <Text>Gửi tới Moderator:</Text>
             <Switch
               checked={settings?.auto_post_to_moderator ?? false}
@@ -488,7 +488,7 @@ export default function NickConfigModal({
             )}
           </Space>
 
-          <Space>
+          <Space wrap>
             {autoPostRunning ? (
               <Button
                 danger
@@ -521,7 +521,7 @@ export default function NickConfigModal({
               value={newPostContent}
               onChange={(e) => setNewPostContent(e.target.value)}
             />
-            <Space>
+            <Space wrap>
               <Text>Min (s):</Text>
               <InputNumber
                 min={5}
@@ -562,8 +562,8 @@ export default function NickConfigModal({
                 ]}
               >
                 <Space direction="vertical" style={{ width: "100%" }}>
-                  <Text>{item.content}</Text>
-                  <Space>
+                  <Text style={{ overflowWrap: "anywhere" }}>{item.content}</Text>
+                  <Space wrap>
                     <Text type="secondary">Min:</Text>
                     <InputNumber
                       size="small"
@@ -607,7 +607,7 @@ export default function NickConfigModal({
               description="Auto-pin dùng item_id và shop_id từ Knowledge data. Hãy import sản phẩm ở tab Knowledge trước khi cấu hình Auto-pin."
             />
           )}
-          <Space align="center">
+          <Space align="center" wrap>
             <Text strong>Auto-pin enabled:</Text>
             <Switch
               checked={autoPinEnabled}
@@ -619,7 +619,7 @@ export default function NickConfigModal({
             />
           </Space>
 
-          <Space align="center">
+          <Space align="center" wrap>
             <Text>Min:</Text>
             <InputNumber
               min={1}
@@ -658,14 +658,14 @@ export default function NickConfigModal({
             <Text type="danger">Min phải nhỏ hơn hoặc bằng Max</Text>
           )}
 
-          <Space align="center">
+          <Space align="center" wrap>
             <Text>Trạng thái:</Text>
             <Tag color={pinRunning ? "green" : "default"}>
               {pinRunning ? "● Đang chạy" : "○ Đã dừng"}
             </Tag>
           </Space>
 
-          <Space>
+          <Space wrap>
             <Button
               type="primary"
               icon={<PlayCircleOutlined />}
@@ -693,10 +693,10 @@ export default function NickConfigModal({
       children: (
         <Space direction="vertical" style={{ width: "100%" }} size="middle">
           <Space direction="vertical" style={{ width: "100%" }}>
-            <Space align="center">
+            <Space align="center" wrap>
               <Text strong>Chế độ reply:</Text>
               <Select<ReplyMode>
-                style={{ width: 220 }}
+                style={{ width: "min(220px, 100%)" }}
                 value={settings?.reply_mode ?? "none"}
                 onChange={(val) => handleUpdateSettings({ reply_mode: val })}
                 options={[
@@ -708,7 +708,7 @@ export default function NickConfigModal({
               />
             </Space>
             <Text type="secondary">Kênh gửi reply:</Text>
-            <Space align="center">
+            <Space align="center" wrap>
               <Text>Host channel:</Text>
               <Switch
                 checked={settings?.reply_to_host ?? false}
@@ -719,7 +719,7 @@ export default function NickConfigModal({
                 <Tag color="default">Chưa có host config</Tag>
               )}
             </Space>
-            <Space align="center">
+            <Space align="center" wrap>
               <Text>Moderator channel:</Text>
               <Switch
                 checked={settings?.reply_to_moderator ?? false}
@@ -738,7 +738,7 @@ export default function NickConfigModal({
             Reply Templates
           </Title>
 
-          <Space style={{ width: "100%" }}>
+          <Space style={{ width: "100%" }} wrap>
             <Input
               placeholder="Reply template content..."
               value={newReplyContent}
@@ -770,7 +770,7 @@ export default function NickConfigModal({
                   />,
                 ]}
               >
-                <Text>{item.content}</Text>
+                <Text style={{ overflowWrap: "anywhere" }}>{item.content}</Text>
               </List.Item>
             )}
           />
@@ -891,7 +891,7 @@ export default function NickConfigModal({
 
         return (
           <Space direction="vertical" style={{ width: "100%" }} size="middle">
-            <Space align="center">
+            <Space align="center" wrap>
               <Text strong>
                 <DatabaseOutlined /> {products.length} sản phẩm
               </Text>
@@ -980,7 +980,7 @@ export default function NickConfigModal({
       open={open}
       onCancel={onClose}
       footer={null}
-      width={700}
+      width="min(900px, calc(100vw - 16px))"
       destroyOnClose
     >
       <Tabs items={tabItems} />

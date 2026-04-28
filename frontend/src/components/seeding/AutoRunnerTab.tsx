@@ -235,7 +235,7 @@ export function AutoRunnerTab({
               {clones.map((c) => {
                 const checked = selectedCloneIds.includes(c.id);
                 return (
-                  <Space key={c.id} align="center">
+                  <Space key={c.id} align="center" wrap>
                     <Checkbox
                       checked={checked}
                       disabled={c.auto_disabled}
@@ -317,6 +317,7 @@ export function AutoRunnerTab({
           size="small"
           pagination={false}
           locale={{ emptyText: "Chưa có run nào đang chạy" }}
+          scroll={{ x: 820 }}
         />
       </Card>
 

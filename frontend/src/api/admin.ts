@@ -10,12 +10,33 @@ export interface AdminUser {
   is_locked: boolean;
   created_at: string;
   nick_count: number;
+  clone_count: number;
+  live_reply_enabled_count: number;
   ai_key_mode: AiKeyMode;
   openai_own_key_set: boolean;
 }
 
+export interface AdminUserNick {
+  id: number;
+  name: string;
+  shopee_user_id: number;
+  reply_mode: "none" | "knowledge" | "ai" | "template";
+  reply_enabled: boolean;
+  reply_to_host: boolean;
+  reply_to_moderator: boolean;
+  auto_post_enabled: boolean;
+  auto_pin_enabled: boolean;
+}
+
 export async function listUsers(): Promise<AdminUser[]> {
   const { data } = await apiClient.get<AdminUser[]>("/admin/users");
+  return data;
+}
+
+export async function listUserNicks(userId: number): Promise<AdminUserNick[]> {
+  const { data } = await apiClient.get<AdminUserNick[]>(
+    `/admin/users/${userId}/nicks`
+  );
   return data;
 }
 

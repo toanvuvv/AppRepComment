@@ -123,7 +123,7 @@ export default function CommentFeedView({ nickLiveId, replyLogIndex }: CommentFe
             const key = c.id ?? `${idx}-${name}-${ts}`;
             const log = findLog(replyLogIndex, c);
             return (
-              <div key={key} style={{ padding: "4px 0", borderBottom: "1px solid #f0f0f0" }}>
+              <div key={key} style={{ padding: "4px 0", borderBottom: "1px solid #f0f0f0", wordBreak: "break-word", overflowWrap: "anywhere" }}>
                 {ts && <Text type="secondary" style={{ fontSize: 11, marginRight: 6 }}>{ts}</Text>}
                 <Text strong style={{ color: "#1677ff", marginRight: 6 }}>{name}:</Text>
                 <Text>{text}</Text>

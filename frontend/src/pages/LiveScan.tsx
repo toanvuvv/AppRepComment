@@ -91,14 +91,16 @@ function LiveScan() {
   const focusSession = focusNickId ? sessionsByNick[focusNickId]?.active : null;
 
   return (
-    <div>
-      <Title level={3}>Quét Comment Live Shopee</Title>
+    <div className="app-page">
+      <div className="app-page-title-row">
+        <Title level={3} style={{ margin: 0 }}>Quét Comment Live Shopee</Title>
+      </div>
 
       <Card
         style={{ marginBottom: 16 }}
         title="Danh sách Nick Live"
         extra={
-          <Space>
+          <Space wrap className="app-card-extra-row">
             <Button icon={<ReloadOutlined />} onClick={loadNicks}>Refresh</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
               Thêm nick

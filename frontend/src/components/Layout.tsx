@@ -51,38 +51,28 @@ function AppLayout() {
   };
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
-      <Header style={{ display: "flex", alignItems: "center" }}>
-        <div
-          style={{
-            color: "#fff",
-            fontSize: 18,
-            fontWeight: 600,
-            marginRight: 40,
-            whiteSpace: "nowrap",
-          }}
-        >
-          App Rep Comment
-        </div>
+    <Layout className="app-shell">
+      <Header className="app-header">
+        <div className="app-brand">App Rep Comment</div>
         <Menu
+          className="app-nav"
           theme="dark"
           mode="horizontal"
           selectedKeys={[location.pathname]}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
-          style={{ flex: 1 }}
         />
         <Dropdown menu={userMenu} placement="bottomRight" trigger={["click"]}>
-          <Space style={{ cursor: "pointer", marginLeft: 16, color: "#fff" }}>
+          <Space className="app-user-menu">
             <Avatar size="small" icon={<UserOutlined />} />
             <span>{user?.username}</span>
           </Space>
         </Dropdown>
       </Header>
-      <Content style={{ padding: 24 }}>
+      <Content className="app-content">
         <Outlet />
       </Content>
-      <Footer style={{ textAlign: "center" }}>
+      <Footer className="app-footer">
         App Rep Comment &copy; {new Date().getFullYear()}
       </Footer>
     </Layout>

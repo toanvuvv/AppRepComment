@@ -118,7 +118,7 @@ export function TemplatesTab() {
               />
               <Input
                 defaultValue={t.content}
-                style={{ width: 400 }}
+                style={{ width: "min(400px, 100%)" }}
                 onBlur={(e) => {
                   const val = e.target.value.trim();
                   if (val !== t.content) {
@@ -137,12 +137,12 @@ export function TemplatesTab() {
 
       <div>
         <Title level={5}>Thêm 1 câu</Title>
-        <Space>
+        <Space wrap>
           <Input
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
             placeholder="Nội dung template mới"
-            style={{ width: 400 }}
+            style={{ width: "min(400px, 100%)" }}
             onPressEnter={onAdd}
           />
           <Button

@@ -102,12 +102,25 @@ function KnowledgeProductsCardInner({ nickLiveId }: Props) {
       title: "Keywords",
       dataIndex: "keywords",
       width: 200,
-      render: (val: string) =>
-        parseKeywords(val).map((kw, i) => (
-          <Tag key={i} color="blue" style={{ marginBottom: 2 }}>
-            {kw}
-          </Tag>
-        )),
+      render: (val: string) => (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+          {parseKeywords(val).map((kw, i) => (
+            <Tag
+              key={i}
+              color="blue"
+              style={{
+                marginBottom: 2,
+                maxWidth: 180,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {kw}
+            </Tag>
+          ))}
+        </div>
+      ),
     },
     {
       title: "Giá",
@@ -138,7 +151,7 @@ function KnowledgeProductsCardInner({ nickLiveId }: Props) {
         return (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
             {vouchers.map((v: string, i: number) => (
-              <Tag key={i} color="orange" style={{ marginBottom: 2, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>
+              <Tag key={i} color="orange" style={{ marginBottom: 2, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", overflowWrap: "anywhere" }}>
                 {v}
               </Tag>
             ))}
@@ -176,7 +189,7 @@ function KnowledgeProductsCardInner({ nickLiveId }: Props) {
   return (
     <Card
       title={
-        <Space>
+        <Space wrap>
           <DatabaseOutlined />
           <span>Knowledge Products</span>
           <Tag color="blue">{products.length} sản phẩm</Tag>

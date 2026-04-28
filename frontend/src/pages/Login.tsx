@@ -41,8 +41,8 @@ export default function LoginPage() {
 
   return (
     <div style={{ display: "flex", justifyContent: "center", alignItems: "center",
-                  minHeight: "100vh", background: "#f0f2f5" }}>
-      <Card title="Đăng nhập" style={{ width: 380 }}>
+                  minHeight: "100vh", background: "#f0f2f5", padding: 12 }}>
+      <Card title="Đăng nhập" style={{ width: "min(380px, calc(100vw - 24px))" }}>
         {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
         <Form layout="vertical" onFinish={onFinish} disabled={loading}>
           <Form.Item label="Tên đăng nhập" name="username"

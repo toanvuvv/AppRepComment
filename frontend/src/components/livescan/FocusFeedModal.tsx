@@ -48,8 +48,8 @@ export default function FocusFeedModal({ nick, open, onClose }: FocusFeedModalPr
       open={open && nick !== null}
       onCancel={onClose}
       footer={null}
-      width={1000}
-      styles={{ body: { height: "75vh", padding: 16, overflow: "auto" } }}
+      width="min(1000px, calc(100vw - 16px))"
+      styles={{ body: { height: "min(75vh, 720px)", padding: 16, overflow: "auto" } }}
       destroyOnHidden
     >
       {nick && (

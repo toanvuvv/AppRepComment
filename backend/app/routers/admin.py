@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_admin
 from app.models.nick_live import NickLive
-from app.models.settings import AppSetting
+from app.models.seeding import SeedingClone
+from app.models.settings import AppSetting, NickLiveSetting
 from app.models.user import User
 from app.schemas.settings import (
     SystemKeysResponse,
@@ -22,7 +24,21 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 class _UserWithCount(UserOut):
     nick_count: int
+    clone_count: int
+    live_reply_enabled_count: int
     openai_own_key_set: bool
+
+
+class _NickDetail(BaseModel):
+    id: int
+    name: str
+    shopee_user_id: int
+    reply_mode: str
+    reply_enabled: bool
+    reply_to_host: bool
+    reply_to_moderator: bool
+    auto_post_enabled: bool
+    auto_pin_enabled: bool
 
 
 @router.get("/users", response_model=list[_UserWithCount])
@@ -30,10 +46,23 @@ def list_users(
     _: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    rows = (
-        db.query(User, func.count(NickLive.id))
-        .outerjoin(NickLive, NickLive.user_id == User.id)
-        .group_by(User.id)
+    users = db.query(User).all()
+
+    nick_counts = dict(
+        db.query(NickLive.user_id, func.count(NickLive.id))
+        .group_by(NickLive.user_id)
+        .all()
+    )
+    clone_counts = dict(
+        db.query(SeedingClone.user_id, func.count(SeedingClone.id))
+        .group_by(SeedingClone.user_id)
+        .all()
+    )
+    reply_on_counts = dict(
+        db.query(NickLive.user_id, func.count(NickLive.id))
+        .join(NickLiveSetting, NickLiveSetting.nick_live_id == NickLive.id)
+        .filter(NickLiveSetting.reply_mode != "none")
+        .group_by(NickLive.user_id)
         .all()
     )
     own_key_user_ids = {
@@ -47,11 +76,45 @@ def list_users(
     return [
         _UserWithCount(
             **UserOut.model_validate(u).model_dump(),
-            nick_count=int(c),
+            nick_count=int(nick_counts.get(u.id, 0)),
+            clone_count=int(clone_counts.get(u.id, 0)),
+            live_reply_enabled_count=int(reply_on_counts.get(u.id, 0)),
             openai_own_key_set=u.id in own_key_user_ids,
         )
-        for u, c in rows
+        for u in users
     ]
+
+
+@router.get("/users/{user_id}/nicks", response_model=list[_NickDetail])
+def list_user_nicks(
+    user_id: int,
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if not db.get(User, user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    rows = (
+        db.query(NickLive, NickLiveSetting)
+        .outerjoin(NickLiveSetting, NickLiveSetting.nick_live_id == NickLive.id)
+        .filter(NickLive.user_id == user_id)
+        .order_by(NickLive.id.asc())
+        .all()
+    )
+    out: list[_NickDetail] = []
+    for nick, setting in rows:
+        mode = setting.reply_mode if setting else "none"
+        out.append(_NickDetail(
+            id=nick.id,
+            name=nick.name,
+            shopee_user_id=nick.shopee_user_id,
+            reply_mode=mode,
+            reply_enabled=mode != "none",
+            reply_to_host=bool(setting.reply_to_host) if setting else False,
+            reply_to_moderator=bool(setting.reply_to_moderator) if setting else False,
+            auto_post_enabled=bool(setting.auto_post_enabled) if setting else False,
+            auto_pin_enabled=bool(setting.auto_pin_enabled) if setting else False,
+        ))
+    return out
 
 
 @router.post("/users", response_model=UserOut, status_code=201)

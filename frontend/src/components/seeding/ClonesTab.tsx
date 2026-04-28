@@ -131,6 +131,7 @@ export function ClonesTab() {
         loading={loading}
         pagination={false}
         size="small"
+        scroll={{ x: 720 }}
       />
 
       <div>
