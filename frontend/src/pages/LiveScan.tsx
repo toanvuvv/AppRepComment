@@ -139,7 +139,7 @@ function LiveScan() {
         nickLiveId={configNick?.id ?? 0}
         nickName={configNick?.name ?? ""}
         sessionId={
-          configNick && focusNickId === configNick.id ? (focusSession?.sessionId ?? 0) : 0
+          configNick ? (sessionsByNick[configNick.id]?.active?.sessionId ?? null) : null
         }
         open={!!configNick}
         onClose={() => setConfigNick(null)}
