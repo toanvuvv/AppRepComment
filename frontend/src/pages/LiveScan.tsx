@@ -88,8 +88,6 @@ function LiveScan() {
     [nicks, focusNickId]
   );
 
-  const focusSession = focusNickId ? sessionsByNick[focusNickId]?.active : null;
-
   return (
     <div className="app-page">
       <div className="app-page-title-row">
