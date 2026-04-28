@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
-from app.database import get_db
+from app.database import SessionLocal, get_db
 from app.models.nick_live import NickLive
 from app.models.reply_log import ReplyLog
 from app.schemas.nick_live import (
@@ -372,11 +372,14 @@ def get_all_comments(
 @router.get("/{nick_live_id}/comments/stream")
 async def stream_comments(
     nick_live_id: int,
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> EventSourceResponse:
     """SSE endpoint - streams new comments as they arrive."""
-    _owned_nick_or_404(db, nick_live_id, current_user.id)
+    # Open a short-lived session just to validate ownership; do NOT hold a DB
+    # connection for the lifetime of the SSE stream (which can run for hours
+    # and would exhaust the connection pool).
+    with SessionLocal() as db:
+        _owned_nick_or_404(db, nick_live_id, current_user.id)
 
     async def event_generator():
         queue = scanner.subscribe(nick_live_id)

@@ -11,6 +11,16 @@ SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./database.db")
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False},
+    # The default QueuePool (size=5, overflow=10 → 15 total) is far too small
+    # for an app that runs many concurrent SSE streams + background workers
+    # (auto_poster / auto_pinner / live_moderator / comment_scanner) per nick.
+    # Bump generously and fail fast so a stuck handler doesn't take 30s to
+    # surface and trip the healthcheck.
+    pool_size=int(os.getenv("DB_POOL_SIZE", "30")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "60")),
+    pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "5")),
+    pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
+    pool_pre_ping=True,
 )
 
 
