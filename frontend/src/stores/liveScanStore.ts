@@ -38,6 +38,8 @@ interface LiveScanState {
   setMiniStats: (nickId: number, stats: ScanStats) => void;
   setCookieExpired: (nickId: number, value: boolean) => void;
 
+  resetAllNickData: () => void;
+
   startScanFor: (nickId: number, sessionId: number) => Promise<void>;
   stopScanFor: (nickId: number) => Promise<void>;
   openSSE: (nickId: number) => void;
@@ -105,6 +107,14 @@ export const useLiveScanStore = create<LiveScanState>((set, get) => ({
     set((s) => ({
       cookieExpiredByNick: { ...s.cookieExpiredByNick, [nickId]: value },
     })),
+
+  resetAllNickData: () =>
+    set({
+      sessionsByNick: {},
+      commentsByNick: {},
+      miniStatsByNick: {},
+      cookieExpiredByNick: {},
+    }),
 
   startScanFor: async (nickId, sessionId) => {
     try {

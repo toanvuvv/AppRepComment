@@ -30,11 +30,12 @@ function LiveScan() {
   const stopScanFor = useLiveScanStore((s) => s.stopScanFor);
   const scanningNickIds = useLiveScanStore((s) => s.scanningNickIds);
   const sessionsByNick = useLiveScanStore((s) => s.sessionsByNick);
+  const resetAllNickData = useLiveScanStore((s) => s.resetAllNickData);
 
   const nickIds = useMemo(() => nicks.map((n) => n.id), [nicks]);
   const scanningArray = useMemo(() => Array.from(scanningNickIds), [scanningNickIds]);
 
-  useNickLiveSessionsPoll(nickIds, true);
+  const { forceTick } = useNickLiveSessionsPoll(nickIds, true);
   useScanStatsPoll(scanningArray);
 
   const loadNicks = useCallback(async () => {
@@ -99,6 +100,13 @@ function LiveScan() {
         title="Danh sách Nick Live"
         extra={
           <Space wrap className="app-card-extra-row">
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => forceTick()}
+              disabled={nicks.length === 0}
+            >
+              Refresh sessions
+            </Button>
             <Button icon={<ReloadOutlined />} onClick={loadNicks}>Refresh</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
               Thêm nick
