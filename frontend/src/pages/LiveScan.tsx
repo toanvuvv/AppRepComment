@@ -40,11 +40,12 @@ function LiveScan() {
     // Tear down all in-flight SSE / scanning state when switching user context.
     const { sseHandles, closeSSE } = useLiveScanStore.getState();
     Object.keys(sseHandles).forEach((id) => closeSSE(Number(id)));
+    resetAllNickData();
     setNicks([]);
     setFocusNickId(null);
     setConfigNick(null);
     setEditCookieNick(null);
-  }, []);
+  }, [resetAllNickData]);
 
   const nickIds = useMemo(() => nicks.map((n) => n.id), [nicks]);
   const scanningArray = useMemo(() => Array.from(scanningNickIds), [scanningNickIds]);
