@@ -53,7 +53,9 @@ function AppLayout() {
   return (
     <Layout className="app-shell">
       <Header className="app-header">
-        <div className="app-brand">App Rep Comment</div>
+        <div className="app-brand">
+          <img src="/Logo.png" alt="Logo" className="app-brand-logo" />
+        </div>
         <Menu
           className="app-nav"
           theme="dark"
@@ -73,7 +75,8 @@ function AppLayout() {
         <Outlet />
       </Content>
       <Footer className="app-footer">
-        App Rep Comment &copy; {new Date().getFullYear()}
+        <img src="/Logo.png" alt="Logo" className="app-footer-logo" />
+        &copy; {new Date().getFullYear()}
       </Footer>
     </Layout>
   );

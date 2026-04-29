@@ -33,6 +33,112 @@ canvas {
   min-height: 100vh;
 }
 
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(120, 80, 255, 0.35), transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(0, 200, 255, 0.3), transparent 50%),
+    linear-gradient(135deg, #0f1535 0%, #1a1f5c 50%, #2c1769 100%);
+  padding: 24px;
+}
+
+.login-shell {
+  width: 100%;
+  max-width: 960px;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+
+.login-hero {
+  padding: 48px 40px;
+  color: #fff;
+  background: linear-gradient(160deg, rgba(99, 102, 241, 0.55), rgba(168, 85, 247, 0.35));
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.login-hero-logo {
+  width: auto;
+  height: 80px;
+  max-width: 280px;
+  object-fit: contain;
+  margin-bottom: 20px;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.35));
+  background: rgba(255, 255, 255, 0.95);
+  padding: 8px 14px;
+  border-radius: 12px;
+}
+
+.login-feature {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 0;
+}
+
+.login-feature-icon {
+  font-size: 22px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  padding: 8px;
+  border-radius: 10px;
+  flex: 0 0 auto;
+}
+
+.login-form-wrap {
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 40px;
+}
+
+.login-form-card {
+  width: 100%;
+  max-width: 360px;
+}
+
+.login-form-head {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-form-logo {
+  width: auto;
+  height: 64px;
+  max-width: 220px;
+  object-fit: contain;
+  margin-bottom: 12px;
+}
+
+.login-foot {
+  text-align: center;
+  margin-top: 20px;
+}
+
+@media (max-width: 768px) {
+  .login-shell {
+    grid-template-columns: 1fr;
+    max-width: 440px;
+  }
+  .login-hero {
+    padding: 32px 24px;
+  }
+  .login-form-wrap {
+    padding: 32px 24px;
+  }
+}
+
 .app-header {
   display: flex;
   align-items: center;
@@ -41,11 +147,24 @@ canvas {
 }
 
 .app-brand {
-  color: #fff;
-  font-size: 18px;
-  font-weight: 600;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
   flex: 0 0 auto;
+}
+
+.app-brand-logo {
+  height: 48px;
+  width: auto;
+  max-width: 220px;
+  display: block;
+  object-fit: contain;
+}
+
+.app-footer-logo {
+  height: 20px;
+  width: auto;
+  vertical-align: middle;
+  margin-right: 8px;
 }
 
 .app-nav {
