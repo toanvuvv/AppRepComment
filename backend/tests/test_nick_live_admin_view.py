@@ -144,3 +144,20 @@ def test_non_admin_cannot_list_other_user_knowledge_products():
         headers=_hdr(tok),
     )
     assert r.status_code == 403
+
+
+def test_admin_can_list_other_user_reply_logs():
+    tok = _login("nlav_admin")
+    r = client.get(
+        f"/api/reply-logs?as_user_id={_uid('nlav_bob')}", headers=_hdr(tok)
+    )
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
+
+
+def test_non_admin_cannot_list_other_user_reply_logs():
+    tok = _login("nlav_alice")
+    r = client.get(
+        f"/api/reply-logs?as_user_id={_uid('nlav_bob')}", headers=_hdr(tok)
+    )
+    assert r.status_code == 403

@@ -1,4 +1,4 @@
-"""Reply log query endpoints.
+﻿"""Reply log query endpoints.
 
 Read-only views over the ``reply_logs`` table. Supports filtering by nick,
 outcome, and time window, plus an aggregate ``/stats`` endpoint intended
@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, resolve_user_context
 from app.models.nick_live import NickLive
 from app.models.reply_log import ReplyLog
 from app.models.user import User
@@ -50,10 +50,10 @@ def list_reply_logs(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> list[ReplyLog]:
     """List reply log rows, newest first."""
-    owned = _owned_nick_ids(current_user.id, db)
+    owned = _owned_nick_ids(ctx_user.id, db)
     q = db.query(ReplyLog).filter(ReplyLog.nick_live_id.in_(owned))
     if nick_live_id is not None:
         q = q.filter(ReplyLog.nick_live_id == nick_live_id)
@@ -77,10 +77,10 @@ def list_reply_logs(
 def list_reply_log_sessions(
     nick_live_id: int = Query(..., gt=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> list[ReplyLogSessionSummary]:
     """Group reply logs theo session_id cho 1 nick. Newest session first."""
-    owned = _owned_nick_ids(current_user.id, db)
+    owned = _owned_nick_ids(ctx_user.id, db)
     rows = (
         db.query(
             ReplyLog.session_id.label("session_id"),
@@ -110,7 +110,7 @@ def reply_log_stats(
     nick_live_id: int | None = None,
     since: datetime | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> ReplyLogStats:
     """Aggregate counts and latency percentiles over a time window.
 
@@ -120,7 +120,7 @@ def reply_log_stats(
     if since is None:
         since = until - timedelta(hours=24)
 
-    owned = _owned_nick_ids(current_user.id, db)
+    owned = _owned_nick_ids(ctx_user.id, db)
     q = db.query(ReplyLog).filter(
         ReplyLog.created_at >= since,
         ReplyLog.nick_live_id.in_(owned),
@@ -186,15 +186,15 @@ def delete_reply_log_session(
     nick_live_id: int = Query(..., gt=0),
     session_id: int = Query(..., gt=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> dict:
-    """Xóa toàn bộ reply log của 1 session cho 1 nick.
+    """XÃ³a toÃ n bá»™ reply log cá»§a 1 session cho 1 nick.
 
-    Trả 404 nếu nick không thuộc user hiện tại.
+    Tráº£ 404 náº¿u nick khÃ´ng thuá»™c user hiá»‡n táº¡i.
     """
     owns = (
         db.query(NickLive.id)
-        .filter(NickLive.id == nick_live_id, NickLive.user_id == current_user.id)
+        .filter(NickLive.id == nick_live_id, NickLive.user_id == ctx_user.id)
         .first()
     )
     if owns is None:
