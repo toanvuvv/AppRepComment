@@ -1,6 +1,7 @@
 # backend/app/services/settings_service.py
 import json
 import logging
+import time
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -8,6 +9,14 @@ from sqlalchemy.orm import Session
 from app.models.settings import AppSetting, AutoPostTemplate, NickLiveSetting, ReplyTemplate
 
 logger = logging.getLogger(__name__)
+
+_RELIVE_KEY_CACHE: dict[str, tuple[float, str | None]] = {}
+_RELIVE_KEY_TTL = 60.0
+_RELIVE_KEY_CACHE_KEY = "system_relive_api_key"
+
+
+def invalidate_relive_key_cache() -> None:
+    _RELIVE_KEY_CACHE.pop(_RELIVE_KEY_CACHE_KEY, None)
 
 
 class SettingsService:
@@ -87,10 +96,17 @@ class SettingsService:
         self._set_system_setting(self._SYSTEM_OPENAI_MODEL, value)
 
     def get_system_relive_api_key(self) -> str | None:
-        return self._get_system_setting(self._RELIVE_KEY)
+        now = time.monotonic()
+        cached = _RELIVE_KEY_CACHE.get(_RELIVE_KEY_CACHE_KEY)
+        if cached and now - cached[0] < _RELIVE_KEY_TTL:
+            return cached[1]
+        value = self._get_system_setting(self._RELIVE_KEY)
+        _RELIVE_KEY_CACHE[_RELIVE_KEY_CACHE_KEY] = (now, value)
+        return value
 
     def set_system_relive_api_key(self, value: str) -> None:
         self._set_system_setting(self._RELIVE_KEY, value)
+        _RELIVE_KEY_CACHE.pop(_RELIVE_KEY_CACHE_KEY, None)
 
     def resolve_openai_config(self, ai_key_mode: str) -> tuple[str | None, str | None]:
         """Return (api_key, model) per the user's ai_key_mode. No fallback."""

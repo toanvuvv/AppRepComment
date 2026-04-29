@@ -228,7 +228,9 @@ def delete_user(
 
 def _invalidate_all_nick_settings() -> None:
     from app.services.nick_cache import nick_cache
+    from app.services.settings_service import invalidate_relive_key_cache
     nick_cache._settings.clear()
+    invalidate_relive_key_cache()
 
 
 @router.get("/system-keys", response_model=SystemKeysResponse)
