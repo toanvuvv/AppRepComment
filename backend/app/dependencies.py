@@ -43,3 +43,25 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
     return user
+
+
+def resolve_user_context(
+    as_user_id: int | None = Query(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Return the user whose context the request operates in.
+
+    - ``as_user_id`` omitted or equal to caller → caller (back-compat).
+    - Non-admin caller passing a different id → 403.
+    - Admin caller passing a non-existent id → 404.
+    - Admin caller passing a valid id → that user.
+    """
+    if as_user_id is None or as_user_id == user.id:
+        return user
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    target = db.get(User, as_user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Target user not found")
+    return target
