@@ -15,6 +15,8 @@ import NickConfigModal from "../components/NickConfigModal";
 import { useLiveScanStore } from "../stores/liveScanStore";
 import { useNickLiveSessionsPoll } from "../hooks/useNickLiveSessionsPoll";
 import { useScanStatsPoll } from "../hooks/useScanStatsPoll";
+import ViewAsUserSelect from "../components/livescan/ViewAsUserSelect";
+import { useViewAsStore } from "../stores/viewAsStore";
 
 const { Title } = Typography;
 
@@ -30,6 +32,18 @@ function LiveScan() {
   const stopScanFor = useLiveScanStore((s) => s.stopScanFor);
   const scanningNickIds = useLiveScanStore((s) => s.scanningNickIds);
   const sessionsByNick = useLiveScanStore((s) => s.sessionsByNick);
+
+  const viewAsUserId = useViewAsStore((s) => s.viewAsUserId);
+
+  const handleContextChange = useCallback(() => {
+    // Tear down all in-flight SSE / scanning state when switching user context.
+    const { sseHandles, closeSSE } = useLiveScanStore.getState();
+    Object.keys(sseHandles).forEach((id) => closeSSE(Number(id)));
+    setNicks([]);
+    setFocusNickId(null);
+    setConfigNick(null);
+    setEditCookieNick(null);
+  }, []);
 
   const nickIds = useMemo(() => nicks.map((n) => n.id), [nicks]);
   const scanningArray = useMemo(() => Array.from(scanningNickIds), [scanningNickIds]);
@@ -47,6 +61,13 @@ function LiveScan() {
   }, []);
 
   useEffect(() => { loadNicks(); }, [loadNicks]);
+
+  // When viewAsUserId changes (including being cleared), reload nick list.
+  useEffect(() => {
+    loadNicks();
+    // loadNicks is stable; intentionally omit handleContextChange to avoid double-fire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewAsUserId]);
 
   // On first load, restore scanning state from backend for each nick
   useEffect(() => {
@@ -93,6 +114,8 @@ function LiveScan() {
       <div className="app-page-title-row">
         <Title level={3} style={{ margin: 0 }}>Quét Comment Live Shopee</Title>
       </div>
+
+      <ViewAsUserSelect onContextChange={handleContextChange} />
 
       <Card
         style={{ marginBottom: 16 }}
