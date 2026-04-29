@@ -1,11 +1,26 @@
-import axios from "axios";
+import axios, { type InternalAxiosRequestConfig } from "axios";
+import { getViewAsUserId } from "../stores/viewAsStore";
 
 const apiClient = axios.create({
   baseURL: "/api",
   headers: { "Content-Type": "application/json" },
 });
 
-apiClient.interceptors.request.use((config) => {
+// Routes that participate in the cross-user (as_user_id) context.
+// Keep this list in sync with backend routers using resolve_user_context.
+const CROSS_USER_PREFIXES = [
+  "/nick-lives",
+  "/reply-logs",
+  "/settings",
+];
+
+function shouldAttachAsUserId(url: string | undefined): boolean {
+  if (!url) return false;
+  const path = url.startsWith("/") ? url : `/${url}`;
+  return CROSS_USER_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`) || path.startsWith(`${p}?`));
+}
+
+apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const raw = localStorage.getItem("auth");
   if (raw) {
     try {
@@ -17,6 +32,12 @@ apiClient.interceptors.request.use((config) => {
       /* ignore */
     }
   }
+
+  const asUserId = getViewAsUserId();
+  if (asUserId !== null && shouldAttachAsUserId(config.url)) {
+    config.params = { ...(config.params ?? {}), as_user_id: asUserId };
+  }
+
   return config;
 });
 
@@ -35,6 +56,7 @@ apiClient.interceptors.response.use(
   },
 );
 
+/** Append `token` query param to a URL (for SSE / static <a> links). */
 export function withTokenQuery(url: string): string {
   const raw = localStorage.getItem("auth");
   if (!raw) return url;
@@ -46,6 +68,17 @@ export function withTokenQuery(url: string): string {
   } catch {
     return url;
   }
+}
+
+/** Append both `token` and (if active) `as_user_id` query params. Use for SSE. */
+export function withAuthQuery(url: string): string {
+  let out = withTokenQuery(url);
+  const asUserId = getViewAsUserId();
+  if (asUserId !== null) {
+    const sep = out.includes("?") ? "&" : "?";
+    out = `${out}${sep}as_user_id=${asUserId}`;
+  }
+  return out;
 }
 
 export default apiClient;

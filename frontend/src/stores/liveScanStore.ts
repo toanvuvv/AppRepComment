@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { CommentItem, LiveSession, ScanStats } from "../api/nickLive";
 import { startScan, stopScan, getComments } from "../api/nickLive";
-import { withTokenQuery } from "../api/client";
+import { withAuthQuery } from "../api/client";
 
 const COMMENT_BUFFER_MAX = 500;
 const SSE_INITIAL_RETRY_MS = 1000;
@@ -141,7 +141,7 @@ export const useLiveScanStore = create<LiveScanState>((set, get) => ({
 
     const connect = () => {
       if (handle.cancelled) return;
-      const url = withTokenQuery(`/api/nick-lives/${nickId}/comments/stream`);
+      const url = withAuthQuery(`/api/nick-lives/${nickId}/comments/stream`);
       const es = new EventSource(url);
       handle.source = es;
 
