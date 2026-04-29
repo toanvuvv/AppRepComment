@@ -56,6 +56,7 @@ import {
 import {
   getModeratorStatus,
   saveModeratorCurl,
+  getSessions,
   type ModeratorStatus,
 } from "../api/nickLive";
 
@@ -117,6 +118,10 @@ export default function NickConfigModal({
   // --- Knowledge products state ---
   const [products, setProducts] = useState<KnowledgeProduct[]>([]);
   const [parseLoading, setParseLoading] = useState(false);
+
+  // --- Live session state (freshly fetched on modal open) ---
+  const [liveSessionId, setLiveSessionId] = useState<number | null>(sessionId);
+  const [liveSessionLoading, setLiveSessionLoading] = useState(false);
 
   // --- Debounce refs ---
   const debounceTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
@@ -188,6 +193,27 @@ export default function NickConfigModal({
       Object.values(timers).forEach(clearTimeout);
     };
   }, []);
+
+  // --- Fetch active session immediately on open ---
+  useEffect(() => {
+    if (!open || !nickLiveId) return;
+    let cancelled = false;
+    setLiveSessionLoading(true);
+    getSessions(nickLiveId)
+      .then((res) => {
+        if (cancelled) return;
+        setLiveSessionId(res.active_session?.sessionId ?? null);
+      })
+      .catch(() => {
+        // Keep prop fallback; do not clobber to null on error
+      })
+      .finally(() => {
+        if (!cancelled) setLiveSessionLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, nickLiveId]);
 
   // --- Host Config handlers ---
   const handleGetCredentials = useCallback(async () => {
@@ -369,13 +395,14 @@ export default function NickConfigModal({
 
   // --- Knowledge handlers ---
   const handleParseProducts = useCallback(async () => {
-    if (!sessionId) {
+    const effectiveSessionId = liveSessionId ?? sessionId;
+    if (!effectiveSessionId) {
       message.warning("Chưa có session đang live");
       return;
     }
     setParseLoading(true);
     try {
-      const data = await parseKnowledgeProducts(nickLiveId, Number(sessionId));
+      const data = await parseKnowledgeProducts(nickLiveId, effectiveSessionId);
       setProducts(data);
       message.success(`Parse thành công ${data.length} sản phẩm`);
     } catch (err: unknown) {
@@ -385,7 +412,7 @@ export default function NickConfigModal({
     } finally {
       setParseLoading(false);
     }
-  }, [nickLiveId, sessionId]);
+  }, [nickLiveId, sessionId, liveSessionId]);
 
   const handleDeleteAllProducts = useCallback(async () => {
     try {
@@ -891,6 +918,13 @@ export default function NickConfigModal({
 
         return (
           <Space direction="vertical" style={{ width: "100%" }} size="middle">
+            {liveSessionLoading ? (
+              <Text type="secondary">Đang lấy session live...</Text>
+            ) : (liveSessionId ?? sessionId) ? (
+              <Text type="success">Live đang chạy: #{liveSessionId ?? sessionId}</Text>
+            ) : (
+              <Text type="warning">Không có live đang chạy</Text>
+            )}
             <Space align="center" wrap>
               <Text strong>
                 <DatabaseOutlined /> {products.length} sản phẩm
@@ -899,7 +933,7 @@ export default function NickConfigModal({
                 type="primary"
                 icon={<ThunderboltOutlined />}
                 loading={parseLoading}
-                disabled={!sessionId}
+                disabled={!(liveSessionId ?? sessionId)}
                 onClick={handleParseProducts}
               >
                 Parse sản phẩm
@@ -917,11 +951,6 @@ export default function NickConfigModal({
                 </Popconfirm>
               )}
             </Space>
-            {!sessionId && (
-              <Text type="secondary">
-                Cần có phiên live đang scan để parse sản phẩm từ Relive.
-              </Text>
-            )}
             {products.length > 0 && (
               <Table
                 dataSource={products}
