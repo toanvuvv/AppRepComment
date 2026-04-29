@@ -36,7 +36,10 @@ def migrate() -> None:
             else:
                 logger.info("Migration 010: users.ai_key_mode already present — skip ALTER")
 
-            cur.execute("DELETE FROM app_settings WHERE key = 'relive_api_key'")
+            cur.execute(
+                "DELETE FROM app_settings "
+                "WHERE key = 'relive_api_key' AND user_id IS NOT NULL"
+            )
             deleted_relive = cur.rowcount
             cur.execute(
                 "DELETE FROM app_settings "
