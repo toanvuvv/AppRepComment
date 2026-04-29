@@ -199,7 +199,7 @@ async def list_sessions_batch(
     db: Session = Depends(get_db),
     ctx_user: User = Depends(resolve_user_context),
 ) -> BatchSessionsResponse:
-    """Batch-fetch sessions for multiple owned nicks. Throttles 200ms between calls."""
+    """Batch-fetch sessions for multiple owned nicks in parallel."""
     raw = [s.strip() for s in ids.split(",") if s.strip()]
     if not raw:
         return BatchSessionsResponse(sessions={})
@@ -214,10 +214,7 @@ async def list_sessions_batch(
         .all()
     )
 
-    result: dict[str, BatchSessionEntry] = {}
-    for idx, nick in enumerate(owned):
-        if idx > 0:
-            await asyncio.sleep(0.2)
+    async def _fetch_one(nick: NickLive) -> tuple[str, BatchSessionEntry]:
         try:
             data = await get_live_sessions(nick.cookies)
             sessions_data = data.get("data", {}).get("list", [])
@@ -237,11 +234,15 @@ async def list_sessions_batch(
                     comments=s.get("comments", 0),
                 )
                 sessions.append(session)
-                if session.status == 1 and session.duration == 0:
-                    active = session
-            result[str(nick.id)] = BatchSessionEntry(active_session=active, all_sessions=sessions)
+                if session.status == 1:
+                    if active is None or session.startTime > active.startTime:
+                        active = session
+            return str(nick.id), BatchSessionEntry(active_session=active, all_sessions=sessions)
         except Exception as e:
-            result[str(nick.id)] = BatchSessionEntry(error=str(e))
+            return str(nick.id), BatchSessionEntry(error=str(e))
+
+    pairs = await asyncio.gather(*(_fetch_one(n) for n in owned))
+    result: dict[str, BatchSessionEntry] = dict(pairs)
 
     return BatchSessionsResponse(sessions=result)
 
@@ -280,8 +281,9 @@ async def get_sessions(
             comments=s.get("comments", 0),
         )
         sessions.append(session)
-        if session.status == 1 and session.duration == 0:
-            active = session
+        if session.status == 1:
+            if active is None or session.startTime > active.startTime:
+                active = session
 
     return LiveSessionsResponse(sessions=sessions, active_session=active)
 
@@ -582,18 +584,16 @@ async def host_get_credentials(
     nick_settings = svc.get_or_create_nick_settings(nick_live_id)
     proxy = getattr(nick_settings, "host_proxy", None)
 
-    debug: dict = {}  # DEBUG_RELIVE
     try:
-        creds = await get_host_credentials(nick.cookies, api_key, proxy=proxy, debug=debug)
+        creds = await get_host_credentials(nick.cookies, api_key, proxy=proxy)
     except ValueError as exc:
         logger.error("host_get_credentials failed for nick %s: %s", nick_live_id, exc)
-        # DEBUG_RELIVE: surface debug dict so FE can log it
-        raise HTTPException(status_code=502, detail={"message": str(exc), "debug": debug})
+        raise HTTPException(status_code=502, detail=str(exc))
 
     svc.save_host_config(nick_live_id, creds["usersig"], creds["uuid"])
     moderator.save_host_config(nick_live_id, creds["usersig"], creds["uuid"])
 
-    return {"status": "ok", "uuid": creds["uuid"], "debug": debug}  # DEBUG_RELIVE
+    return {"status": "ok", "uuid": creds["uuid"]}
 
 
 @router.get("/{nick_live_id}/host/status")

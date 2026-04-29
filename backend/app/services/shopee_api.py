@@ -7,6 +7,9 @@ parsing httpx errors themselves.
 """
 from __future__ import annotations
 
+import hashlib
+import time
+
 import httpx
 
 from app.services.exceptions import (
@@ -16,6 +19,18 @@ from app.services.exceptions import (
 )
 from app.services.http_client import get_client
 from app.services.rate_limiter import shopee_limiter
+
+_SESSIONS_CACHE: dict[str, tuple[float, dict]] = {}
+_SESSIONS_CACHE_TTL = 10.0
+
+
+def _cookie_key(cookies: str) -> str:
+    return hashlib.sha256(cookies.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def invalidate_sessions_cache(cookies: str) -> None:
+    _SESSIONS_CACHE.pop(_cookie_key(cookies), None)
+
 
 SHOPEE_HEADERS = {
     "accept": "application/json",
@@ -63,7 +78,13 @@ def _raise_for_shopee(resp: httpx.Response, endpoint: str) -> None:
 
 
 async def get_live_sessions(cookies: str) -> dict:
-    """Fetch session list from Shopee Creator API."""
+    """Fetch session list from Shopee Creator API (10-second in-memory cache)."""
+    key = _cookie_key(cookies)
+    now = time.monotonic()
+    cached = _SESSIONS_CACHE.get(key)
+    if cached and now - cached[0] < _SESSIONS_CACHE_TTL:
+        return cached[1]
+
     url = (
         "https://creator.shopee.vn/supply/api/lm/sellercenter/realtime/sessionList"
         "?page=1&pageSize=10&name=&orderBy=&sort="
@@ -74,7 +95,9 @@ async def get_live_sessions(cookies: str) -> dict:
     client = get_client()
     resp = await client.get(url, headers=headers)
     _raise_for_shopee(resp, "get_live_sessions")
-    return resp.json()
+    data = resp.json()
+    _SESSIONS_CACHE[key] = (now, data)
+    return data
 
 
 async def get_comments(cookies: str, session_id: int, start_timestamp: int) -> list:
