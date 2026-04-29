@@ -1,9 +1,9 @@
-# backend/app/routers/settings.py
+﻿# backend/app/routers/settings.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, resolve_user_context
 from app.models.user import User
 from app.schemas.settings import (
     AutoPostTemplateCreate,
@@ -34,7 +34,7 @@ def _invalidate_all_nick_settings() -> None:
     clear the private dict on the cache singleton rather than exposing a
     new public method, per Wave 2 instructions.
     """
-    # Direct dict clear — the cache API doesn't publish a bulk-invalidate
+    # Direct dict clear â€” the cache API doesn't publish a bulk-invalidate
     # helper, but the underlying storage is a plain dict.
     nick_cache._settings.clear()
 
@@ -49,14 +49,14 @@ router = APIRouter(
 @router.get("/openai", response_model=OpenAIConfigResponse)
 def get_openai_config(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> OpenAIConfigResponse:
-    svc = SettingsService(db, user_id=current_user.id)
+    svc = SettingsService(db, user_id=ctx_user.id)
     config = svc.get_openai_config()
     return OpenAIConfigResponse(
         **config,
-        ai_key_mode=current_user.ai_key_mode,
-        is_managed_by_admin=current_user.ai_key_mode == "system",
+        ai_key_mode=ctx_user.ai_key_mode,
+        is_managed_by_admin=ctx_user.ai_key_mode == "system",
     )
 
 
@@ -64,14 +64,14 @@ def get_openai_config(
 def update_openai_config(
     payload: OpenAIConfigUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> dict:
-    if current_user.ai_key_mode == "system":
+    if ctx_user.ai_key_mode == "system":
         raise HTTPException(
             status_code=403,
-            detail="Tài khoản đang dùng system key; không thể tự cấu hình",
+            detail="TÃ i khoáº£n Ä‘ang dÃ¹ng system key; khÃ´ng thá»ƒ tá»± cáº¥u hÃ¬nh",
         )
-    svc = SettingsService(db, user_id=current_user.id)
+    svc = SettingsService(db, user_id=ctx_user.id)
     svc.set_setting("openai_api_key", payload.api_key)
     svc.set_setting("openai_model", payload.model)
     _invalidate_all_nick_settings()
@@ -83,9 +83,9 @@ def update_openai_config(
 @router.get("/system-prompt", response_model=SystemPromptResponse)
 def get_system_prompt(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> SystemPromptResponse:
-    svc = SettingsService(db, user_id=current_user.id)
+    svc = SettingsService(db, user_id=ctx_user.id)
     return SystemPromptResponse(prompt=svc.get_system_prompt())
 
 
@@ -93,9 +93,9 @@ def get_system_prompt(
 def update_system_prompt(
     payload: SystemPromptUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> dict:
-    svc = SettingsService(db, user_id=current_user.id)
+    svc = SettingsService(db, user_id=ctx_user.id)
     svc.set_setting("ai_system_prompt", payload.prompt)
     _invalidate_all_nick_settings()
     return {"status": "saved"}
@@ -106,27 +106,27 @@ def update_system_prompt(
 @router.get("/reply-templates", response_model=list[ReplyTemplateResponse])
 def list_reply_templates(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> list:
-    return SettingsService(db, user_id=current_user.id).get_reply_templates()
+    return SettingsService(db, user_id=ctx_user.id).get_reply_templates()
 
 
 @router.post("/reply-templates", response_model=ReplyTemplateResponse)
 def create_reply_template(
     payload: ReplyTemplateCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ):
-    return SettingsService(db, user_id=current_user.id).create_reply_template(payload.content)
+    return SettingsService(db, user_id=ctx_user.id).create_reply_template(payload.content)
 
 
 @router.delete("/reply-templates/{template_id}")
 def delete_reply_template(
     template_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> dict:
-    if not SettingsService(db, user_id=current_user.id).delete_reply_template(template_id):
+    if not SettingsService(db, user_id=ctx_user.id).delete_reply_template(template_id):
         raise HTTPException(status_code=404, detail="Template not found")
     return {"detail": "Deleted"}
 
@@ -136,18 +136,18 @@ def delete_reply_template(
 @router.get("/auto-post-templates", response_model=list[AutoPostTemplateResponse])
 def list_auto_post_templates(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> list:
-    return SettingsService(db, user_id=current_user.id).get_auto_post_templates()
+    return SettingsService(db, user_id=ctx_user.id).get_auto_post_templates()
 
 
 @router.post("/auto-post-templates", response_model=AutoPostTemplateResponse)
 def create_auto_post_template(
     payload: AutoPostTemplateCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ):
-    return SettingsService(db, user_id=current_user.id).create_auto_post_template(
+    return SettingsService(db, user_id=ctx_user.id).create_auto_post_template(
         payload.content, payload.min_interval_seconds, payload.max_interval_seconds
     )
 
@@ -157,9 +157,9 @@ def update_auto_post_template(
     template_id: int,
     payload: AutoPostTemplateUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ):
-    result = SettingsService(db, user_id=current_user.id).update_auto_post_template(
+    result = SettingsService(db, user_id=ctx_user.id).update_auto_post_template(
         template_id,
         content=payload.content,
         min_interval=payload.min_interval_seconds,
@@ -174,9 +174,9 @@ def update_auto_post_template(
 def delete_auto_post_template(
     template_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> dict:
-    if not SettingsService(db, user_id=current_user.id).delete_auto_post_template(template_id):
+    if not SettingsService(db, user_id=ctx_user.id).delete_auto_post_template(template_id):
         raise HTTPException(status_code=404, detail="Template not found")
     return {"detail": "Deleted"}
 
@@ -186,26 +186,26 @@ def delete_auto_post_template(
 @router.post("/test-ai")
 async def test_ai(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ) -> dict:
     """Test OpenAI connection with current config."""
-    svc = SettingsService(db, user_id=current_user.id)
-    api_key, model = svc.resolve_openai_config(current_user.ai_key_mode)
+    svc = SettingsService(db, user_id=ctx_user.id)
+    api_key, model = svc.resolve_openai_config(ctx_user.ai_key_mode)
     if not api_key:
-        if current_user.ai_key_mode == "system":
-            raise HTTPException(status_code=400, detail="Admin chưa cấu hình System OpenAI key")
-        raise HTTPException(status_code=400, detail="OpenAI API Key chưa được cấu hình")
+        if ctx_user.ai_key_mode == "system":
+            raise HTTPException(status_code=400, detail="Admin chÆ°a cáº¥u hÃ¬nh System OpenAI key")
+        raise HTTPException(status_code=400, detail="OpenAI API Key chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh")
     model = model or "gpt-4o"
-    system_prompt = svc.get_system_prompt() or "Bạn là nhân viên CSKH."
+    system_prompt = svc.get_system_prompt() or "Báº¡n lÃ  nhÃ¢n viÃªn CSKH."
     reply = await generate_reply(
         api_key=api_key,
         model=model,
         system_prompt=system_prompt,
-        comment_text="Sản phẩm này có ship COD không ạ?",
-        guest_name="Khách test",
+        comment_text="Sáº£n pháº©m nÃ y cÃ³ ship COD khÃ´ng áº¡?",
+        guest_name="KhÃ¡ch test",
     )
     if reply is None:
-        raise HTTPException(status_code=502, detail="OpenAI không phản hồi. Kiểm tra lại API key và model.")
+        raise HTTPException(status_code=502, detail="OpenAI khÃ´ng pháº£n há»“i. Kiá»ƒm tra láº¡i API key vÃ  model.")
     return {"reply": reply, "model": model}
 
 
@@ -215,9 +215,9 @@ async def test_ai(
 @router.get("/knowledge-ai", response_model=KnowledgeAIConfigResponse)
 def get_knowledge_ai_config(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ):
-    svc = SettingsService(db, user_id=current_user.id)
+    svc = SettingsService(db, user_id=ctx_user.id)
     return KnowledgeAIConfigResponse(
         system_prompt=svc.get_knowledge_system_prompt(),
         model=svc.get_knowledge_model() or "gpt-4o",
@@ -228,9 +228,9 @@ def get_knowledge_ai_config(
 def update_knowledge_ai_config(
     payload: KnowledgeAIConfigUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ):
-    svc = SettingsService(db, user_id=current_user.id)
+    svc = SettingsService(db, user_id=ctx_user.id)
     if payload.system_prompt is not None:
         svc.set_setting("knowledge_system_prompt", payload.system_prompt)
     if payload.model is not None:
@@ -245,9 +245,9 @@ def update_knowledge_ai_config(
 @router.get("/banned-words", response_model=BannedWordsResponse)
 def get_banned_words(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ):
-    svc = SettingsService(db, user_id=current_user.id)
+    svc = SettingsService(db, user_id=ctx_user.id)
     return BannedWordsResponse(words=svc.get_banned_words())
 
 
@@ -255,9 +255,9 @@ def get_banned_words(
 def update_banned_words(
     payload: BannedWordsUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ):
-    svc = SettingsService(db, user_id=current_user.id)
+    svc = SettingsService(db, user_id=ctx_user.id)
     svc.set_banned_words(payload.words)
     _invalidate_all_nick_settings()
     return {"status": "saved"}
