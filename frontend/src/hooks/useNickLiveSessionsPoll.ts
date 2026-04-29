@@ -2,9 +2,12 @@ import { useEffect, useRef } from "react";
 import { listSessionsBatch } from "../api/nickLive";
 import { useLiveScanStore } from "../stores/liveScanStore";
 
-const POLL_INTERVAL_MS = 60_000;
+const POLL_INTERVAL_MS = 30_000;
 
-export function useNickLiveSessionsPoll(nickIds: number[], enabled = true): void {
+export function useNickLiveSessionsPoll(
+  nickIds: number[],
+  enabled = true
+): { forceTick: () => void } {
   const upsertSession = useLiveScanStore((s) => s.upsertSession);
   const stopScanFor = useLiveScanStore((s) => s.stopScanFor);
   const scanningNickIds = useLiveScanStore((s) => s.scanningNickIds);
@@ -13,8 +16,13 @@ export function useNickLiveSessionsPoll(nickIds: number[], enabled = true): void
   const scanningRef = useRef(scanningNickIds);
   scanningRef.current = scanningNickIds;
 
+  const tickRef = useRef<() => Promise<void>>(async () => {});
+
   useEffect(() => {
-    if (!enabled || idsKey.length === 0) return;
+    if (!enabled || idsKey.length === 0) {
+      tickRef.current = async () => {};
+      return;
+    }
     const ids = idsKey.split(",").map(Number).filter(Boolean);
     let cancelled = false;
 
@@ -41,15 +49,26 @@ export function useNickLiveSessionsPoll(nickIds: number[], enabled = true): void
           }
         }
       } catch {
-        // network error — skip this tick
+        // Mark all polled ids with a generic network error so UI can show stale state
+        for (const id of ids) {
+          upsertSession(id, { error: "Không tải được session" });
+        }
       }
     }
 
+    tickRef.current = tick;
     tick();
     const handle = setInterval(tick, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(handle);
+      tickRef.current = async () => {};
     };
   }, [idsKey, enabled, upsertSession, stopScanFor]);
+
+  return {
+    forceTick: () => {
+      void tickRef.current();
+    },
+  };
 }
