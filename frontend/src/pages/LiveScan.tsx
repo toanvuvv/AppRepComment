@@ -6,6 +6,7 @@ import {
   deleteNickLive,
   getScanStatus,
   listNickLives,
+  testNickCookies,
 } from "../api/nickLive";
 import NickLiveTable from "../components/livescan/NickLiveTable";
 import AddNickModal from "../components/livescan/AddNickModal";
@@ -91,6 +92,24 @@ function LiveScan() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nicks.length]);
 
+  const handleTestCookies = useCallback(async (nick: NickLive) => {
+    const hide = message.loading(`Đang kiểm tra cookies "${nick.name}"...`, 0);
+    try {
+      const res = await testNickCookies(nick.id);
+      hide();
+      if (res.valid) {
+        message.success(res.message);
+      } else if (res.reason === "no_relive") {
+        message.warning(res.message);
+      } else {
+        message.error(res.message);
+      }
+    } catch {
+      hide();
+      message.error("Không thể kiểm tra cookies");
+    }
+  }, []);
+
   const handleDelete = useCallback(
     async (id: number) => {
       try {
@@ -143,6 +162,7 @@ function LiveScan() {
           onFocus={(id) => setFocusNickId(id)}
           onConfig={(n) => setConfigNick(n)}
           onEditCookies={(n) => setEditCookieNick({ id: n.id, name: n.name })}
+          onTestCookies={handleTestCookies}
           onDelete={handleDelete}
         />
       </Card>

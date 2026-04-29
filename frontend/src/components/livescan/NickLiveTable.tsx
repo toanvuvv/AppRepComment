@@ -2,6 +2,7 @@ import { Avatar, Button, Popconfirm, Space, Table, Tag, Tooltip, Typography } fr
 import {
   DeleteOutlined,
   EditOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -22,6 +23,7 @@ interface NickLiveTableProps {
   onFocus: (nickId: number) => void;
   onConfig: (nick: NickLive) => void;
   onEditCookies: (nick: NickLive) => void;
+  onTestCookies: (nick: NickLive) => void;
   onDelete: (nickId: number) => void;
 }
 
@@ -34,6 +36,7 @@ export default function NickLiveTable({
   onFocus,
   onConfig,
   onEditCookies,
+  onTestCookies,
   onDelete,
 }: NickLiveTableProps) {
   const sessionsByNick = useLiveScanStore((s) => s.sessionsByNick);
@@ -127,7 +130,7 @@ export default function NickLiveTable({
     {
       title: "",
       key: "actions",
-      width: 130,
+      width: 170,
       render: (_, r) => (
         <Space size={4} onClick={(e) => e.stopPropagation()}>
           <Tooltip title="Cấu hình reply">
@@ -135,6 +138,9 @@ export default function NickLiveTable({
           </Tooltip>
           <Tooltip title="Cập nhật cookies">
             <Button size="small" icon={<EditOutlined />} onClick={() => onEditCookies(r)} />
+          </Tooltip>
+          <Tooltip title="Kiểm tra cookies">
+            <Button size="small" icon={<SafetyCertificateOutlined />} onClick={() => onTestCookies(r)} />
           </Tooltip>
           <Popconfirm title="Xóa nick live này?" onConfirm={() => onDelete(r.id)}>
             <Button size="small" danger icon={<DeleteOutlined />} />

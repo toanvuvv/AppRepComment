@@ -596,6 +596,50 @@ async def host_get_credentials(
     return {"status": "ok", "uuid": creds["uuid"]}
 
 
+@router.post("/{nick_live_id}/test-cookies")
+async def test_nick_cookies(
+    nick_live_id: int,
+    db: Session = Depends(get_db),
+    ctx_user: User = Depends(resolve_user_context),
+) -> dict:
+    """Validate cookies by attempting a relive.vn credentials fetch.
+
+    Returns one of:
+      - {"valid": true,  "reason": "ok",            "message": "..."}
+      - {"valid": false, "reason": "no_relive",     "message": "..."}
+      - {"valid": false, "reason": "invalid_cookies","message": "..."}
+    """
+    nick = db.query(NickLive).filter(
+        NickLive.id == nick_live_id, NickLive.user_id == ctx_user.id
+    ).first()
+    if not nick:
+        raise HTTPException(status_code=404, detail="NickLive not found")
+
+    svc = SettingsService(db, user_id=ctx_user.id)
+    api_key = svc.get_system_relive_api_key()
+    if not api_key:
+        return {
+            "valid": False,
+            "reason": "no_relive",
+            "message": "API relive chưa được cấu hình",
+        }
+
+    nick_settings = svc.get_or_create_nick_settings(nick_live_id)
+    proxy = getattr(nick_settings, "host_proxy", None)
+
+    try:
+        await get_host_credentials(nick.cookies, api_key, proxy=proxy)
+    except ValueError as exc:
+        logger.info("test_cookies failed for nick %s: %s", nick_live_id, exc)
+        return {
+            "valid": False,
+            "reason": "invalid_cookies",
+            "message": f"Cookies hết hạn, vui lòng cập nhật ({exc})",
+        }
+
+    return {"valid": True, "reason": "ok", "message": "Cookies còn hiệu lực"}
+
+
 @router.get("/{nick_live_id}/host/status")
 def host_status(
     nick_live_id: int,

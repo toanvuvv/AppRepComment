@@ -82,6 +82,17 @@ export async function updateNickLiveCookies(
   return res.data;
 }
 
+export interface TestCookiesResult {
+  valid: boolean;
+  reason: "ok" | "no_relive" | "invalid_cookies";
+  message: string;
+}
+
+export async function testNickCookies(id: number): Promise<TestCookiesResult> {
+  const res = await apiClient.post(`/nick-lives/${id}/test-cookies`);
+  return res.data;
+}
+
 export async function getSessions(
   id: number
 ): Promise<LiveSessionsResponse> {
