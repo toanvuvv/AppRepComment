@@ -1,11 +1,11 @@
-# backend/app/routers/knowledge.py
+﻿# backend/app/routers/knowledge.py
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, resolve_user_context
 from app.models.nick_live import NickLive
 from app.models.user import User
 from app.schemas.settings import (
@@ -26,9 +26,9 @@ router = APIRouter(
 )
 
 
-def _require_nick_ownership(nick_live_id: int, current_user: User, db: Session) -> NickLive:
+def _require_nick_ownership(nick_live_id: int, user_id: int, db: Session) -> NickLive:
     nick = db.query(NickLive).filter(
-        NickLive.id == nick_live_id, NickLive.user_id == current_user.id
+        NickLive.id == nick_live_id, NickLive.user_id == user_id
     ).first()
     if not nick:
         raise HTTPException(status_code=404, detail="Nick not found")
@@ -40,10 +40,10 @@ def import_products(
     nick_live_id: int,
     payload: KnowledgeProductImportRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ):
     """Parse Shopee cart JSON, extract keywords (code-based), save products."""
-    _require_nick_ownership(nick_live_id, current_user, db)
+    _require_nick_ownership(nick_live_id, ctx_user.id, db)
     kp_svc = KnowledgeProductService(db)
     try:
         products = kp_svc.import_products(
@@ -62,12 +62,12 @@ async def parse_products_from_relive(
     nick_live_id: int,
     payload: KnowledgeProductParseRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ):
     """Fetch live items from relive.vn API and import as knowledge products."""
-    nick = _require_nick_ownership(nick_live_id, current_user, db)
+    nick = _require_nick_ownership(nick_live_id, ctx_user.id, db)
 
-    svc = SettingsService(db, user_id=current_user.id)
+    svc = SettingsService(db, user_id=ctx_user.id)
     api_key = svc.get_system_relive_api_key()
     if not api_key:
         raise HTTPException(status_code=400, detail="Relive API key not configured")
@@ -103,10 +103,10 @@ async def parse_products_from_relive(
 def list_products(
     nick_live_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ):
     """List all knowledge products for this nick_live."""
-    _require_nick_ownership(nick_live_id, current_user, db)
+    _require_nick_ownership(nick_live_id, ctx_user.id, db)
     kp_svc = KnowledgeProductService(db)
     return kp_svc.get_products(nick_live_id)
 
@@ -115,10 +115,10 @@ def list_products(
 def delete_all_products(
     nick_live_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    ctx_user: User = Depends(resolve_user_context),
 ):
     """Delete all knowledge products for this nick_live."""
-    _require_nick_ownership(nick_live_id, current_user, db)
+    _require_nick_ownership(nick_live_id, ctx_user.id, db)
     kp_svc = KnowledgeProductService(db)
     count = kp_svc.delete_products(nick_live_id)
     nick_cache.invalidate_products(nick_live_id)

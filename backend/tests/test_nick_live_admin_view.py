@@ -122,3 +122,25 @@ def test_admin_get_scan_status_for_other_user():
     )
     assert r.status_code == 200
     assert "is_scanning" in r.json()
+
+
+def test_admin_can_list_other_user_knowledge_products():
+    tok = _login("nlav_admin")
+    nick_id = _bob_nick_id()
+    r = client.get(
+        f"/api/nick-lives/{nick_id}/knowledge/products?as_user_id={_uid('nlav_bob')}",
+        headers=_hdr(tok),
+    )
+    # Empty list is fine; the contract is "no 404 because admin context".
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
+
+
+def test_non_admin_cannot_list_other_user_knowledge_products():
+    tok = _login("nlav_alice")
+    nick_id = _bob_nick_id()
+    r = client.get(
+        f"/api/nick-lives/{nick_id}/knowledge/products?as_user_id={_uid('nlav_bob')}",
+        headers=_hdr(tok),
+    )
+    assert r.status_code == 403
