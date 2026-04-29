@@ -79,6 +79,13 @@ backend/database.db
 backend/database.db-shm
 backend/database.db-wal
 backend/database.db.bak-*
+
+# Runtime data + backups (bind-mounted into the backend container)
+data/*
+!data/.gitkeep
+backups/
+!backups/.gitkeep
+
 .gitnexus
 docker-compose.override.yml
 # Git worktrees

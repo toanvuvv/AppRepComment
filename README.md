@@ -33,3 +33,23 @@ cd backend
 pip install -r requirements.txt
 python -m pytest
 ```
+
+## Backup & Restore
+
+The backend stores SQLite data in `./data/` (bind-mounted to `/app/data` inside
+the container). Make sure this directory exists on the host **before** running
+`docker compose up` — Compose will not create it for you on first run.
+
+```bash
+# Manual online backup (writers stay unblocked). Output: ./backups/database-YYYYMMDD-HHMMSS.db
+./scripts/backup.sh
+
+# Install a cron job that runs the above every 6 hours. Idempotent.
+./scripts/install-backup-cron.sh
+
+# Restore from a backup (stops the backend, swaps the file, restarts, verifies).
+./scripts/restore.sh backups/database-20260429-120000.db
+```
+
+The most recent 14 backups are kept; older files are pruned automatically.
+Pre-bind-mount `.bak` files have been moved to `backups/legacy/`.

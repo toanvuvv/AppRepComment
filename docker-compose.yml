@@ -17,8 +17,10 @@ services:
       DATABASE_URL: sqlite:////app/data/database.db
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
     volumes:
-      # Persist SQLite DB + WAL files across container rebuilds
-      - backend-data:/app/data
+      # Persist SQLite DB + WAL files across container rebuilds.
+      # Bind mount keeps the DB readable on the host for backups/restore
+      # without needing root access to /var/lib/docker/volumes.
+      - ./data:/app/data
     expose:
       - "8000"
     # Uncomment to expose the API directly on the host (bypassing nginx):
@@ -47,7 +49,3 @@ services:
         condition: service_healthy
     ports:
       - "${FRONTEND_PORT:-8080}:80"
-
-volumes:
-  backend-data:
-    name: arc-backend-data

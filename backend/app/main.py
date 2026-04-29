@@ -4,14 +4,16 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.config import REPLY_LOG_CLEANUP_INTERVAL_SEC, REPLY_LOG_RETENTION_HOURS
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal, get_db, init_db
 from app.models.reply_log import ReplyLog
 from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
@@ -56,6 +58,26 @@ async def _reply_log_cleanup_loop() -> None:
             logger.exception("reply_log cleanup error")
 
 
+_SEEDING_LOG_RETENTION_DAYS = 30
+_SEEDING_LOG_CLEANUP_INTERVAL_SEC = 3600
+
+
+async def _seeding_log_cleanup_loop() -> None:
+    """Periodically delete seeding_logs/seeding_log_sessions older than 30 days."""
+    from app.services.seeding_log_retention import cleanup_old_seeding_logs
+
+    while True:
+        try:
+            await asyncio.sleep(_SEEDING_LOG_CLEANUP_INTERVAL_SEC)
+            await asyncio.to_thread(
+                cleanup_old_seeding_logs, _SEEDING_LOG_RETENTION_DAYS
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("seeding_log cleanup loop error")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -81,18 +103,28 @@ async def lifespan(app: FastAPI):
     cleanup_task = asyncio.create_task(
         _reply_log_cleanup_loop(), name="reply-log-cleanup"
     )
+    seeding_cleanup_task = asyncio.create_task(
+        _seeding_log_cleanup_loop(), name="seeding-log-cleanup"
+    )
 
     try:
         yield
     finally:
         # Shutdown sequence.
         cleanup_task.cancel()
+        seeding_cleanup_task.cancel()
         try:
             await cleanup_task
         except asyncio.CancelledError:
             pass
         except Exception:
             logger.exception("reply_log cleanup task shutdown error")
+        try:
+            await seeding_cleanup_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("seeding_log cleanup task shutdown error")
 
         await reply_log_writer.stop()
 
@@ -154,7 +186,16 @@ app.include_router(seeding_proxy_router)
 
 @app.get("/api/health")
 @app.get("/health")
-def health_check():
+def health_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        logger.warning("healthcheck DB probe failed", exc_info=True)
+        return Response(
+            status_code=503,
+            content='{"status":"db_error"}',
+            media_type="application/json",
+        )
     return {"status": "ok"}
 
 
