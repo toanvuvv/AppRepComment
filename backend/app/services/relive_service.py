@@ -34,20 +34,23 @@ async def get_host_credentials(
     if debug is not None:
         debug["url"] = _RELIVE_URL
         debug["method"] = "POST"
-        debug["payload"] = dict(payload)
-        debug["cookies"] = cookies
+        safe_payload = dict(payload)
+        if "apikey" in safe_payload:
+            ak = safe_payload["apikey"]
+            safe_payload["apikey"] = (ak[:4] + "..." + ak[-4:]) if ak and len(ak) > 10 else "<short>"
+        if "cookie" in safe_payload:
+            safe_payload["cookie"] = f"<len={len(safe_payload['cookie'] or '')}>"
+        debug["payload"] = safe_payload
         debug["cookie_length"] = len(cookies or "")
 
-    # Debug: log outgoing payload (mask apikey + trim cookie for safety)
+    # Debug: log outgoing payload (mask apikey + log cookie length only)
     masked_key = (api_key[:4] + "..." + api_key[-4:]) if api_key and len(api_key) > 10 else "<short>"
-    cookie_preview = (cookies[:120] + f"...<len={len(cookies)}>") if cookies else "<empty>"
     logger.info(
-        "Relive preview POST %s | apikey=%s | proxy=%r | cookie_len=%d | cookie_preview=%s",
+        "Relive preview POST %s | apikey=%s | proxy=%r | cookie_len=%d",
         _RELIVE_URL,
         masked_key,
         proxy or "",
         len(cookies or ""),
-        cookie_preview,
     )
 
     client = get_client()
@@ -58,16 +61,16 @@ async def get_host_credentials(
             debug["error"] = f"request_failed: {exc}"
         raise ValueError(f"Relive.vn request failed: {exc}") from exc
 
-    logger.info(
-        "Relive preview <- status=%s body[:500]=%s",
+    logger.debug(
+        "Relive preview <- status=%s body_len=%d",
         resp.status_code,
-        resp.text[:500],
+        len(resp.text),
     )
 
     # DEBUG_RELIVE: capture raw response for FE console
     if debug is not None:
         debug["status_code"] = resp.status_code
-        debug["response_text"] = resp.text
+        debug["response_text"] = (resp.text[:300] + "...") if len(resp.text) > 300 else resp.text
 
     if resp.status_code != 200:
         raise ValueError(
